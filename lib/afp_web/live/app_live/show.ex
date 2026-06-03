@@ -418,8 +418,30 @@ defmodule AfpWeb.AppLive.Show do
 
             <.panel title="Operational Context">
               <:subtitle>
-                Release, repository, and Codex session state.
+                Source demand, release, repository, and Codex session state.
               </:subtitle>
+
+              <.disclosure
+                title="Source Demand"
+                subtitle="Validated pre-app opportunity that promoted into this app."
+                open={@app.promoted_demand_items != []}
+              >
+                <div :if={@app.promoted_demand_items == []}>
+                  <.empty_state message="No linked source demand." />
+                </div>
+                <div
+                  :for={demand_item <- @app.promoted_demand_items}
+                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-medium">{demand_item.title}</div>
+                    <.status_badge status={demand_item.confidence} />
+                  </div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    {demand_item.validation_action}
+                  </div>
+                </div>
+              </.disclosure>
 
               <.disclosure
                 title="Current Release"

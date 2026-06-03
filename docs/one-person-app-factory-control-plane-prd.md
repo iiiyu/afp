@@ -10,9 +10,11 @@ implementation PRD for the MVP.
 ### Product Decision
 
 Build a local-first operating control plane for a one-person app factory. The
-product coordinates app lifecycle state, next actions, lightweight tickets,
-harness packets, Codex session visibility, release readiness, evidence, and
-post-launch business posture.
+product coordinates demand discovery, app lifecycle state, next actions,
+lightweight tickets, harness packets, Codex session visibility, release
+readiness, evidence, and post-launch business posture. Demand items can exist
+before an app or repository exists, then promote into app records when the
+operator chooses to build.
 
 ### MVP Technology Decision
 
@@ -32,6 +34,7 @@ post-launch business posture.
 Within one minute, the operator must be able to answer:
 
 - Which app needs attention now?
+- Which pre-app demand item needs validation now?
 - Why does it need attention?
 - What is the next action?
 - Which ticket or harness packet owns that work?
@@ -43,11 +46,12 @@ Within one minute, the operator must be able to answer:
 ### Problem
 
 A one-person app factory can have many apps in different states at the same
-time: ideas, validation work, build work, release preparation, submitted builds,
-live apps, growth experiments, maintenance, and bug fixes. Codex can execute
-work across many repositories, but the operator still needs to know which app is
-in which state, which task is next, which Codex session is doing what, and what
-proof is needed before a decision can be made.
+time: demand leads, ideas, validation work, build work, release preparation,
+submitted builds, live apps, growth experiments, maintenance, and bug fixes.
+Codex can execute work across many repositories, but the operator still needs to
+know which opportunity deserves validation, which app is in which state, which
+task is next, which Codex session is doing what, and what proof is needed before
+a decision can be made.
 
 Generic project management tools track tasks, but they do not understand app
 lifecycle gates, release readiness, evidence, or Codex session linkage. Agent
@@ -68,6 +72,7 @@ control plane for a one-person app factory.
 ### Product Principles
 
 - App lifecycle first, tickets second.
+- Demand evidence before app promotion.
 - Human confirmation for state transitions and risky work.
 - Harness packets define executable work; tickets track workflow state.
 - Evidence is required before meaningful advancement.
@@ -103,10 +108,14 @@ assistant.
 The MVP must include:
 
 - App inventory with repository path and lifecycle state.
+- Demand management for pre-app opportunities, source evidence, wedge
+  hypotheses, validation actions, and promotion into apps.
 - Today Command Center.
 - App detail cockpit.
 - Lightweight tickets.
 - Minimal harness packet builder.
+- Codex launch requests from demand items, tickets, release blockers, or review
+  prompts.
 - Codex session event intake through hook receiver or JSONL spool import.
 - Session inbox and ticket/session linking.
 - Manual session review.
@@ -146,6 +155,23 @@ Likely V1 features:
 - Optional Go sidecar for local command execution.
 
 ## 4. Core Concepts
+
+### Demand Item
+
+A pre-app opportunity record. It can exist before a repository, bundle ID, or
+app record exists. It captures the source evidence, target user/job, demand
+signal, incumbent weakness, wedge hypothesis, validation action, status, and
+optional promotion into an app.
+
+Allowed MVP values:
+
+- `captured`
+- `researching`
+- `validating`
+- `validated`
+- `promoted`
+- `rejected`
+- `parked`
 
 ### App
 
@@ -218,6 +244,21 @@ Allowed MVP states:
 - `review`
 - `routed`
 - `superseded`
+
+### Codex Launch Request
+
+A human-confirmed request to call Codex or prepare a manual Codex handoff. A
+launch request can start from a demand item, ticket, release blocker, or review
+prompt. In the MVP it records objective, context, risk, confirmation state, and
+manual handoff text; direct Codex integration remains optional and explicitly
+configured.
+
+Allowed MVP values:
+
+- `draft`
+- `ready`
+- `launched`
+- `cancelled`
 
 ### Codex Session
 
@@ -305,6 +346,7 @@ work, stream logs, report status, and accept cancellation.
 
 Recommended contexts:
 
+- `Factory.Demand`: pre-app demand items and Codex launch requests.
 - `Factory.Portfolio`: apps, lifecycle, business posture, next actions.
 - `Factory.Work`: tickets, harness packets, review decisions.
 - `Factory.Sessions`: Codex sessions, hook events, session links.
@@ -368,6 +410,7 @@ because jobs are stored in PostgreSQL and can be inspected.
 Primary navigation:
 
 - Today
+- Demand
 - Apps
 - Board
 - Sessions
@@ -415,7 +458,32 @@ Acceptance criteria:
   blocker", "stale next action", "missing evidence", or "business posture fix".
 - The user can create a ticket from any focus item.
 
-### 8.2 App Portfolio
+### 8.2 Demand Management
+
+Purpose: manage pre-app opportunities before a repository or app exists.
+
+Required modules:
+
+- Demand item list.
+- Status, source, target user/job, demand signal, incumbent weakness, wedge
+  hypothesis, validation action, and evidence summary.
+- Filters by status, source, and confidence.
+- Create/update demand item.
+- Create Codex launch request from demand item.
+- Promote validated demand item into an app.
+- Link promoted demand item to the resulting app.
+
+Acceptance criteria:
+
+- A demand item can be created without repository path or app record.
+- Source evidence and validation action are visible in the list.
+- A demand item can create a bounded launch request for research or validation.
+- Promotion into an app requires an app name and manually chosen lifecycle
+  stage; the promotion records `promoted_app_id`.
+- Rejected or parked demand items do not appear as active app work, but remain
+  searchable.
+
+### 8.3 App Portfolio
 
 Purpose: scan all apps and their current operating state.
 
@@ -443,7 +511,7 @@ Acceptance criteria:
 - A missing or invalid repository path is visibly marked.
 - Opening an app preserves the previous portfolio filter state when returning.
 
-### 8.3 App Detail Cockpit
+### 8.4 App Detail Cockpit
 
 Purpose: recover context for one app.
 
@@ -471,7 +539,7 @@ Acceptance criteria:
 - The user can create a ticket, harness packet, evidence packet, release target,
   or metrics snapshot from the app page.
 
-### 8.4 Ticket Board
+### 8.5 Ticket Board
 
 Purpose: manage app-owned work.
 
@@ -497,7 +565,7 @@ Acceptance criteria:
 - A stopped linked session moves the ticket into review prompt state but does
   not automatically mark it done.
 
-### 8.5 Harness Packet Builder
+### 8.6 Harness Packet Builder
 
 Purpose: turn a next action into an executable work contract.
 
@@ -531,7 +599,7 @@ Acceptance criteria:
 - The packet preview is readable before the user starts work.
 - The system records packet state changes in the event log.
 
-### 8.6 Session Bridge
+### 8.7 Session Bridge
 
 Purpose: make Codex work legible across repositories and tickets.
 
@@ -558,7 +626,7 @@ Acceptance criteria:
 - A stopped linked session creates a review prompt.
 - Transcript ingestion is not required for the session to be useful.
 
-### 8.7 Release Center
+### 8.8 Release Center
 
 Purpose: show what remains before an app can ship.
 
@@ -595,7 +663,7 @@ Acceptance criteria:
 - A failed checklist item can create a ticket/harness packet.
 - Evidence can be attached to each checklist item.
 
-### 8.8 Evidence Store
+### 8.9 Evidence Store
 
 Purpose: preserve proof for decisions.
 
@@ -621,7 +689,7 @@ Acceptance criteria:
 - Deleting an evidence link does not delete the evidence packet unless the user
   explicitly deletes the packet.
 
-### 8.9 Metrics Snapshot
+### 8.10 Metrics Snapshot
 
 Purpose: capture minimal post-launch business signals.
 
@@ -649,7 +717,7 @@ Acceptance criteria:
 - The Today page can flag live apps with no recent snapshot.
 - Metrics are manual in MVP; no external analytics integration is required.
 
-### 8.10 Settings
+### 8.11 Settings
 
 Purpose: configure local operation.
 
@@ -695,7 +763,29 @@ Acceptance criteria:
   threshold, Today shows it as stale.
 - Given no urgent items, Today still shows active apps and their next actions.
 
-### Scenario 2: Add An App
+### Scenario 2: Capture And Validate Demand
+
+User goal: record a pre-app opportunity before committing to a repository.
+
+Flow:
+
+1. User opens Demand.
+2. User creates a demand item with source evidence, target user/job, demand
+   signal, incumbent weakness, wedge hypothesis, and validation action.
+3. User optionally creates a Codex launch request to research or validate the
+   opportunity.
+4. User marks demand validated, rejected, or parked.
+5. If validated, user promotes the demand item into an app.
+
+Acceptance criteria:
+
+- Demand item title and validation action are required.
+- Demand can exist without app, repository, ticket, or release target.
+- Launch request creation requires human confirmation text and risk level.
+- Promoting demand into an app records the app link and moves demand to
+  `promoted`.
+
+### Scenario 3: Add An App
 
 User goal: add a local app project to the portfolio.
 
@@ -717,7 +807,7 @@ Acceptance criteria:
   existing app.
 - Invalid repository paths are saved only with warning state.
 
-### Scenario 3: Define Next Action
+### Scenario 4: Define Next Action
 
 User goal: make an app actionable.
 
@@ -735,7 +825,7 @@ Acceptance criteria:
   default status.
 - Changing next action creates an event.
 
-### Scenario 4: Create A Harness Packet
+### Scenario 5: Create A Harness Packet
 
 User goal: prepare a bounded task for Codex or human execution.
 
@@ -754,7 +844,7 @@ Acceptance criteria:
 - High-risk packet shows confirmation.
 - Packet becomes visible on ticket detail.
 
-### Scenario 5: Receive A Codex Hook Event
+### Scenario 6: Receive A Codex Hook Event
 
 User goal: observe Codex work without manual bookkeeping.
 
@@ -774,7 +864,7 @@ Acceptance criteria:
 - Matching cwd suggests app link.
 - UI updates without page reload.
 
-### Scenario 6: Link Session To Ticket
+### Scenario 7: Link Session To Ticket
 
 User goal: connect a Codex session to the work it is doing.
 
@@ -792,7 +882,7 @@ Acceptance criteria:
 - Linking to ticket is optional but recommended.
 - Link action creates event.
 
-### Scenario 7: Review Completed Session
+### Scenario 8: Review Completed Session
 
 User goal: decide whether Codex work should advance the ticket.
 
@@ -813,7 +903,7 @@ Acceptance criteria:
 - Blocked requires blocked reason.
 - Reject can mark packet superseded or ticket dropped.
 
-### Scenario 8: Prepare Release
+### Scenario 9: Prepare Release
 
 User goal: move an app toward submission.
 
@@ -833,7 +923,7 @@ Acceptance criteria:
 - Waiver requires reason.
 - State transition creates event.
 
-### Scenario 9: Attach Evidence
+### Scenario 10: Attach Evidence
 
 User goal: preserve proof for a decision.
 
@@ -851,7 +941,7 @@ Acceptance criteria:
 - Evidence appears on related object and app evidence timeline.
 - Evidence creation creates event.
 
-### Scenario 10: Capture Business Snapshot
+### Scenario 11: Capture Business Snapshot
 
 User goal: record post-launch business state.
 
@@ -869,7 +959,7 @@ Acceptance criteria:
 - Business posture change requires note.
 - Today can flag live apps with stale or missing snapshot.
 
-### Scenario 11: Pause Or Archive App
+### Scenario 12: Pause Or Archive App
 
 User goal: reduce attention cost for low-value apps.
 
@@ -887,7 +977,7 @@ Acceptance criteria:
 - Archived apps are hidden by default but searchable.
 - State transition creates event.
 
-### Scenario 12: Configure Hook Intake
+### Scenario 13: Configure Hook Intake
 
 User goal: connect Codex events.
 
@@ -905,7 +995,7 @@ Acceptance criteria:
 - Intake errors are shown.
 - Disabling intake does not delete existing events.
 
-### Scenario 13: Recover Context After Interruption
+### Scenario 14: Recover Context After Interruption
 
 User goal: resume work after context switching.
 
@@ -934,6 +1024,65 @@ Acceptance criteria:
 - Use soft archival states rather than destructive deletes for core records.
 
 ### Tables
+
+#### `demand_items`
+
+- `id uuid primary key`
+- `title text not null`
+- `status text not null default 'captured'`
+- `source text`
+- `source_url text`
+- `target_user text`
+- `job_to_be_done text`
+- `demand_signal text`
+- `incumbent_weakness text`
+- `wedge_hypothesis text`
+- `validation_action text not null`
+- `evidence_summary text`
+- `confidence text not null default 'unknown'`
+- `promoted_app_id uuid references apps(id)`
+- `promoted_at timestamptz`
+- `rejected_reason text`
+- `parked_reason text`
+- `inserted_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+Indexes:
+
+- index on `status`
+- index on `confidence`
+- index on `promoted_app_id`
+- index on `inserted_at`
+
+#### `codex_launch_requests`
+
+- `id uuid primary key`
+- `demand_item_id uuid references demand_items(id)`
+- `app_id uuid references apps(id)`
+- `ticket_id uuid references tickets(id)`
+- `release_target_id uuid references release_targets(id)`
+- `source_type text not null`
+- `source_id uuid`
+- `title text not null`
+- `objective text not null`
+- `context text`
+- `risk_level text not null default 'normal'`
+- `launch_mode text not null default 'manual_handoff'`
+- `status text not null default 'draft'`
+- `confirmation text`
+- `handoff_text text`
+- `launched_at timestamptz`
+- `cancelled_at timestamptz`
+- `inserted_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+Indexes:
+
+- index on `demand_item_id`
+- index on `app_id`
+- index on `ticket_id`
+- index on `status`
+- index on `source_type, source_id`
 
 #### `apps`
 
@@ -1205,6 +1354,25 @@ Indexes:
 
 ## 11. State Rules
 
+### Demand State Rules
+
+- `captured` can move to `researching`, `validating`, `rejected`, or `parked`.
+- `researching` can move to `validating`, `validated`, `rejected`, or `parked`.
+- `validating` can move to `validated`, `rejected`, or `parked`.
+- `validated` can move to `promoted`, `rejected`, or `parked`.
+- `promoted` must reference `promoted_app_id`.
+- `rejected` requires a reason.
+- `parked` requires a reason.
+
+### Codex Launch Request Rules
+
+- `draft` can move to `ready`, `launched`, or `cancelled`.
+- `ready` can move to `launched` or `cancelled`.
+- `launched` is a historical state and does not imply ticket, demand, or app
+  success.
+- High-risk launch requests require confirmation text before `ready` or
+  `launched`.
+
 ### Ticket State Rules
 
 - `backlog` can move to `ready`, `active`, `blocked`, or `dropped`.
@@ -1320,6 +1488,7 @@ Acceptance criteria:
 
 Deliverables:
 
+- Demand item CRUD and promotion into app.
 - App CRUD.
 - Portfolio table.
 - App detail cockpit.
@@ -1327,6 +1496,8 @@ Deliverables:
 
 Acceptance criteria:
 
+- User can create demand before an app exists.
+- User can promote validated demand into an app.
 - User can create/edit/archive app.
 - App appears in portfolio and app detail.
 - Today shows apps without next action and apps needing attention.
@@ -1335,6 +1506,7 @@ Acceptance criteria:
 
 Deliverables:
 
+- Codex launch requests from demand items and tickets.
 - Ticket CRUD.
 - Ticket board.
 - Harness packet builder.
@@ -1343,6 +1515,7 @@ Deliverables:
 Acceptance criteria:
 
 - User can create ticket from app.
+- User can create a launch request from demand without direct Codex execution.
 - User can create packet from ticket.
 - Required packet validation works.
 - Ticket done/blocked transitions enforce required notes/evidence rules.
@@ -1403,6 +1576,7 @@ Acceptance criteria:
 ### Unit Tests
 
 - Ecto changesets validate required fields.
+- Demand item and launch request changesets validate required fields.
 - State transition functions enforce rules.
 - Hook parser preserves unknown payload fields.
 - Cwd matching selects correct app.
@@ -1412,6 +1586,8 @@ Acceptance criteria:
 ### Context Tests
 
 - Creating app updates events.
+- Creating demand item updates events.
+- Promoting demand item creates an app link and event.
 - Creating ticket from next action works.
 - Creating harness packet from ticket works.
 - Linking session to ticket works.
@@ -1421,6 +1597,7 @@ Acceptance criteria:
 ### LiveView Tests
 
 - Today renders focus queues.
+- Demand page creates demand items, launch requests, and promoted apps.
 - App portfolio filters and sorts.
 - App detail shows separate lifecycle/ticket/session state.
 - Ticket board moves tickets with required validation.
@@ -1459,6 +1636,7 @@ The MVP is done when:
 - The user can run the Phoenix app locally.
 - PostgreSQL is the only database source of truth.
 - At least five real apps can be managed.
+- Pre-app demand can be captured, validated, and promoted into an app.
 - Today page answers the next-action question within one minute.
 - Codex hook event intake works with fake and real events.
 - Session linking and stopped-session review work.

@@ -8,6 +8,8 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 
 ## Tables
 
+- `demand_items` - Pre-app opportunities with source evidence, target user/job, demand signal, incumbent weakness, wedge hypothesis, validation action, confidence, and optional promoted app link.
+- `codex_launch_requests` - Human-confirmed launch handoffs linked to demand items, apps, tickets, or release targets, with objective, context, risk, launch mode, status, confirmation, and handoff text.
 - `apps` - Portfolio inventory, lifecycle state, business posture, health state, repository path, product thesis, next action, version/build, and archival fields.
 - `tickets` - App-owned work items with workflow status, lifecycle gate, priority, risk, blocked reason, review note, and terminal timestamps.
 - `harness_packets` - Executable work contracts linked to apps, optional tickets, and optional release targets. Stores context, constraints, non-goals, allowed tools, verification, required evidence, approval points, review route, result summary, and next route.
@@ -30,6 +32,8 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 
 - `apps.slug` is unique.
 - `apps.repo_path` is unique when present, preventing duplicate repository-backed app records.
+- `demand_items.promoted_app_id` references the app created from validated demand when promotion occurs.
+- `codex_launch_requests` can point at a demand item, app, ticket, release target, or generic source pair; launch state never implies task success.
 - `codex_sessions.external_session_id` is unique, so duplicate hook events update the same session rather than creating duplicate sessions.
 - `ticket_session_links.ticket_id, codex_session_id` is unique.
 - `repo_scans.repository_path` is unique, so each local repository has one latest scan row.
@@ -44,6 +48,10 @@ Controlled states are stored as text to keep MVP iteration simple and are
 validated in Ecto changesets:
 
 - App lifecycle: `idea`, `validation_ready`, `validation_sprint`, `build_ready`, `in_build`, `release_ready`, `submitted`, `live`, `iterating`, `maintained`, `paused`, `archived`.
+- Demand status: `captured`, `researching`, `validating`, `validated`, `promoted`, `rejected`, `parked`.
+- Demand confidence: `unknown`, `low`, `medium`, `high`.
+- Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.
+- Codex launch mode: `manual_handoff`, `direct_codex`.
 - Business posture: `unknown`, `grow`, `maintain`, `fix`, `harvest`, `pause`, `kill`.
 - App health: `unknown`, `healthy`, `needs_next_action`, `repo_missing`, `repo_dirty`, `blocked`, `release_blocked`, `review`, `metrics_stale`, `maintenance_due`, `growth_review`, `archived`.
 - Ticket status: `backlog`, `ready`, `active`, `review`, `blocked`, `done`, `dropped`.

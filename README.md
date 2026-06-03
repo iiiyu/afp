@@ -1,9 +1,9 @@
 # App Factory Control Plane
 
 Local-first Phoenix LiveView control plane for running a one-person app factory.
-It tracks a portfolio of small app projects across lifecycle state, next action,
-work tickets, harness packets, Codex sessions, release readiness, evidence, and
-business metrics.
+It tracks pre-app demand, a portfolio of small app projects, lifecycle state,
+next action, work tickets, harness packets, Codex sessions, release readiness,
+evidence, and business metrics.
 
 The app is intentionally operational rather than promotional: open it, see what
 needs attention today, route work into a bounded packet, review Codex output,
@@ -13,18 +13,20 @@ attach evidence, and decide whether an app or release is allowed to advance.
 
 ![Today command center](docs/screenshots/today-command-center.png)
 
-| Portfolio | Work Board |
+| Demand Pipeline | Portfolio |
 | --- | --- |
-| ![Portfolio screen](docs/screenshots/portfolio-apps.png) | ![Ticket board](docs/screenshots/work-board.png) |
+| ![Demand management screen](docs/screenshots/demand-pipeline.png) | ![Portfolio screen](docs/screenshots/portfolio-apps.png) |
 
-| Codex Sessions |
-| --- |
-| ![Codex session inbox](docs/screenshots/codex-sessions.png) |
+| Work Board | Codex Sessions |
+| --- | --- |
+| ![Ticket board](docs/screenshots/work-board.png) | ![Codex session inbox](docs/screenshots/codex-sessions.png) |
 
 ## What It Manages
 
 - Portfolio inventory: app name, repository path, platform, lifecycle stage,
   business posture, health state, current version/build, and next action.
+- Demand management: pre-app opportunities, source evidence, target user/job,
+  validation action, bounded Codex launch requests, and promotion into apps.
 - Execution flow: tickets, review states, blocked reasons, and harness packets
   that describe context, constraints, verification, required evidence, and
   routing.
@@ -105,6 +107,7 @@ flowchart LR
     Codex["Codex hooks or JSONL spool"] --> Intake["Local intake endpoint and worker"]
 
     UI --> Dashboard["Factory.Dashboard"]
+    UI --> Demand["Factory.Demand"]
     UI --> Portfolio["Factory.Portfolio"]
     UI --> Work["Factory.Work"]
     UI --> Sessions["Factory.Sessions"]
@@ -121,6 +124,7 @@ flowchart LR
     Settings --> Repositories
 
     Dashboard --> Repo["Afp.Repo"]
+    Demand --> Repo
     Portfolio --> Repo
     Work --> Repo
     Sessions --> Repo
@@ -133,6 +137,7 @@ flowchart LR
     Settings --> Repo
 
     Work --> Events["Factory.Events"]
+    Demand --> Events
     Sessions --> Events
     Releases --> Events
     Evidence --> Events
@@ -154,8 +159,11 @@ flowchart LR
 
 ```mermaid
 erDiagram
+    demand_items ||--o{ codex_launch_requests : requests
+    demand_items }o--o| apps : promotes
     apps ||--o{ tickets : owns
     apps ||--o{ harness_packets : scopes
+    apps ||--o{ codex_launch_requests : requests
     apps ||--o{ codex_sessions : matches
     apps ||--o{ release_targets : releases
     apps ||--o{ evidence_packets : collects
@@ -196,7 +204,9 @@ for the Phase 2 scope and verification contract.
 ## Main Surfaces
 
 - **Today**: focus queue as the primary command surface, with supporting review,
-  release, business, repository, and session queues grouped below it.
+  demand, release, business, repository, and session queues grouped below it.
+- **Demand**: pre-app opportunity pipeline first, with launch requests and
+  promotion into apps kept in secondary action layers.
 - **Apps**: portfolio table as the primary read model, with filters and app
   creation separated into lower-level controls.
 - **Board**: draggable ticket board as the primary work surface, with harness
@@ -233,9 +243,9 @@ The UI is organized around a consistent reading order:
 3. Open [`localhost:4000`](http://localhost:4000). The app loads the Today
    command center.
 
-Seed data includes five local apps when those repositories are present, plus a
-dogfood ticket, harness packet, Codex session, release target, evidence packet,
-and metrics snapshot.
+Seed data includes one demand item and launch request, five local apps when
+those repositories are present, plus a dogfood ticket, harness packet, Codex
+session, release target, evidence packet, and metrics snapshot.
 
 ## Codex Hook Intake
 

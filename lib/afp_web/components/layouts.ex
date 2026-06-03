@@ -53,6 +53,7 @@ defmodule AfpWeb.Layouts do
         <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-4 lg:px-3">
           <nav class="flex flex-col gap-1 text-sm">
             <.nav_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
+            <.nav_item navigate={~p"/demand"} icon="hero-magnifying-glass" label="Demand" />
             <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
             <.nav_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
             <.nav_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
@@ -77,6 +78,7 @@ defmodule AfpWeb.Layouts do
       <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
         <div class="flex items-center justify-between gap-1">
           <.nav_icon_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
+          <.nav_icon_item navigate={~p"/demand"} icon="hero-magnifying-glass" label="Demand" />
           <.nav_icon_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
           <.nav_icon_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
           <.nav_icon_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
@@ -120,7 +122,7 @@ defmodule AfpWeb.Layouts do
       navigate={@navigate}
       aria-label={@label}
       title={@label}
-      class="flex size-10 items-center justify-center rounded text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+      class="flex size-9 items-center justify-center rounded text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
     >
       <.icon name={@icon} class="size-4" />
     </.link>

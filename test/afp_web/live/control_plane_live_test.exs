@@ -12,6 +12,7 @@ defmodule AfpWeb.ControlPlaneLiveTest do
     for {path, text} <- [
           {~p"/", "Focus Queue"},
           {~p"/today", "Focus Queue"},
+          {~p"/demand", "Demand Pipeline"},
           {~p"/apps", "Portfolio"},
           {~p"/board", "Ticket Board"},
           {~p"/sessions", "Session Inbox"},

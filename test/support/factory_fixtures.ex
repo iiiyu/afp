@@ -2,6 +2,7 @@
 # @output - Focused test fixtures for app-factory domain records
 # @pos    - Test helper module for context, controller, and LiveView coverage
 defmodule Afp.FactoryFixtures do
+  alias Afp.Factory.Demand
   alias Afp.Factory.Evidence
   alias Afp.Factory.Portfolio
   alias Afp.Factory.Releases
@@ -45,6 +46,22 @@ defmodule Afp.FactoryFixtures do
 
     {:ok, app} = Portfolio.create_app(Map.merge(defaults, attrs))
     app
+  end
+
+  def demand_item_fixture(attrs \\ %{}) do
+    defaults = %{
+      "title" => "Demand #{unique_integer()}",
+      "source" => "manual",
+      "target_user" => "solo app developer",
+      "demand_signal" => "Repeated user complaint",
+      "incumbent_weakness" => "Existing tools are too heavy",
+      "wedge_hypothesis" => "A narrow local-first workflow can win",
+      "validation_action" => "Collect three concrete examples",
+      "confidence" => "medium"
+    }
+
+    {:ok, demand_item} = Demand.create_demand_item(Map.merge(defaults, attrs))
+    demand_item
   end
 
   def ticket_fixture(app, attrs \\ %{}) do

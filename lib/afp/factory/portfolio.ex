@@ -209,7 +209,9 @@ defmodule Afp.Factory.Portfolio do
       maintenance_obligations:
         from(obligation in Afp.Factory.Maintenance.MaintenanceObligation,
           order_by: [asc_nulls_last: obligation.due_on, desc: obligation.updated_at]
-        )
+        ),
+      promoted_demand_items:
+        from(demand in Afp.Factory.Demand.DemandItem, order_by: [desc: demand.promoted_at])
     )
   end
 

@@ -9,13 +9,14 @@ control plane. Screens stay thin: they render compact operational UI, call
 `Afp.Factory.*` contexts for domain rules, and reload their read model when the
 factory event log broadcasts updates.
 
-Each page follows the same information hierarchy: a page header, a primary
-reading surface, collapsible secondary context, and a separate action rail for
-forms that mutate state.
+Each page follows the same information hierarchy: a persistent global sidebar
+on desktop, a page header, a primary reading surface, collapsible secondary
+context, and a separate action rail for forms that mutate state.
 
 ## File Inventory
 
 - `today_live.ex` - Today command center with focus queues and quick ticket creation.
+- `demand_live.ex` - Demand item pipeline, Codex launch requests, and promotion into apps.
 - `app_live/index.ex` - App portfolio table, filters, and app creation.
 - `app_live/show.ex` - App detail cockpit with lifecycle, tickets, sessions, releases, evidence, and metrics entry points.
 - `board_live.ex` - Draggable ticket board and harness packet builder.

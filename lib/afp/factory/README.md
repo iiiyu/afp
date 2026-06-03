@@ -5,9 +5,10 @@
 ## Architecture Summary
 
 This folder contains the one-person app factory domain model. Contexts are
-split by PRD boundary: portfolio, work, sessions, evidence, releases, metrics,
-settings, events, and dashboard read models. State transitions stay in contexts
-so LiveViews remain thin and older API/UI paths keep consistent behavior.
+split by PRD boundary: demand, portfolio, work, sessions, evidence, releases,
+metrics, settings, events, and dashboard read models. State transitions stay in
+contexts so LiveViews remain thin and older API/UI paths keep consistent
+behavior.
 
 ## File Inventory
 
@@ -15,6 +16,7 @@ so LiveViews remain thin and older API/UI paths keep consistent behavior.
 - `factory/schema.ex` - UUID and timestamp schema defaults.
 - `factory/json_data.ex` - Flexible jsonb Ecto type.
 - `factory/events.ex` and `factory/events/event.ex` - Append-only audit log and PubSub broadcasts.
+- `factory/demand.ex`, `factory/demand/demand_item.ex`, and `factory/demand/codex_launch_request.ex` - Pre-app demand capture, validation launch requests, and promotion into apps.
 - `factory/portfolio.ex` and `factory/portfolio/app.ex` - App inventory, lifecycle, business posture, and repo matching.
 - `factory/work.ex`, `factory/work/ticket.ex`, and `factory/work/harness_packet.ex` - Ticket workflow and harness packet contracts.
 - `factory/sessions.ex`, `factory/sessions/codex_session.ex`, `factory/sessions/hook_event.ex`, and `factory/sessions/ticket_session_link.ex` - Codex hook intake, session linking, ignore, and review.

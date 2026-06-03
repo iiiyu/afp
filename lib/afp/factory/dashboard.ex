@@ -1,7 +1,8 @@
-# @input  - Portfolio, session, release, and metrics query outputs
+# @input  - Demand, portfolio, session, release, and metrics query outputs
 # @output - Today command-center queues with explicit reasons
 # @pos    - Read-model context for deciding what needs attention now
 defmodule Afp.Factory.Dashboard do
+  alias Afp.Factory.Demand
   alias Afp.Factory.Metrics
   alias Afp.Factory.Growth
   alias Afp.Factory.Maintenance
@@ -18,6 +19,7 @@ defmodule Afp.Factory.Dashboard do
     apps_without_next_action = Portfolio.apps_without_next_action()
     apps_with_invalid_repo = Portfolio.apps_with_invalid_repo()
     repo_attention_scans = Repositories.list_repo_attention_scans()
+    active_demand_items = Demand.list_active_demand_items()
     stale_metrics_apps = Metrics.apps_with_stale_metrics()
     due_maintenance = Maintenance.list_due_obligations()
     review_experiments = Growth.list_review_due_experiments()
@@ -31,6 +33,7 @@ defmodule Afp.Factory.Dashboard do
           apps_without_next_action: apps_without_next_action,
           apps_with_invalid_repo: apps_with_invalid_repo,
           repo_attention_scans: repo_attention_scans,
+          active_demand_items: active_demand_items,
           stale_metrics_apps: stale_metrics_apps,
           unlinked_sessions: unlinked_sessions,
           due_maintenance: due_maintenance,
@@ -42,6 +45,7 @@ defmodule Afp.Factory.Dashboard do
       apps_without_next_action: apps_without_next_action,
       apps_with_invalid_repo: apps_with_invalid_repo,
       repo_attention_scans: repo_attention_scans,
+      active_demand_items: active_demand_items,
       stale_metrics_apps: stale_metrics_apps,
       due_maintenance: due_maintenance,
       review_experiments: review_experiments,
@@ -55,11 +59,25 @@ defmodule Afp.Factory.Dashboard do
     |> Kernel.++(Enum.map(data.release_blockers, &release_focus_item/1))
     |> Kernel.++(Enum.map(data.apps_with_invalid_repo, &invalid_repo_focus_item/1))
     |> Kernel.++(Enum.map(data.repo_attention_scans, &repo_scan_focus_item/1))
+    |> Kernel.++(Enum.map(data.active_demand_items, &demand_focus_item/1))
     |> Kernel.++(Enum.map(data.due_maintenance, &maintenance_focus_item/1))
     |> Kernel.++(Enum.map(data.review_experiments, &experiment_focus_item/1))
     |> Kernel.++(Enum.map(data.apps_without_next_action, &missing_next_action_focus_item/1))
     |> Kernel.++(Enum.map(data.stale_metrics_apps, &stale_metrics_focus_item/1))
     |> Kernel.++(Enum.map(data.unlinked_sessions, &unlinked_session_focus_item/1))
+  end
+
+  defp demand_focus_item(demand_item) do
+    %{
+      type: "demand_validation",
+      urgency: 4,
+      title: "Validate demand",
+      reason: "demand #{demand_item.status}",
+      detail: "#{demand_item.title}: #{demand_item.validation_action}",
+      app: nil,
+      demand_item: demand_item,
+      link: "/demand"
+    }
   end
 
   def top_focus_item do

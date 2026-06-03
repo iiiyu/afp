@@ -261,6 +261,28 @@ defmodule AfpWeb.TodayLive do
               </.disclosure>
 
               <.disclosure
+                title="Demand validation"
+                subtitle={"#{length(@dashboard.active_demand_items)} opportunities before app promotion"}
+                open={length(@dashboard.active_demand_items) > 0}
+              >
+                <div :if={@dashboard.active_demand_items == []}>
+                  <.empty_state message="No active demand items need validation." />
+                </div>
+                <div
+                  :for={demand_item <- @dashboard.active_demand_items}
+                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0 font-medium">{demand_item.title}</div>
+                    <.status_badge status={demand_item.status} />
+                  </div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    {demand_item.validation_action}
+                  </div>
+                </div>
+              </.disclosure>
+
+              <.disclosure
                 title="Maintenance and growth"
                 subtitle={"#{length(@dashboard.due_maintenance)} obligations, #{length(@dashboard.review_experiments)} experiments"}
               >

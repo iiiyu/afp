@@ -8,6 +8,10 @@ defmodule Afp.Factory do
   @packet_states ~w(draft ready launched observing review routed superseded)
   @session_statuses ~w(detected linked running waiting stopped reviewed ignored)
   @release_statuses ~w(draft preparing ready_for_review submitted live blocked cancelled)
+  @demand_statuses ~w(captured researching validating validated promoted rejected parked)
+  @demand_confidences ~w(unknown low medium high)
+  @launch_request_statuses ~w(draft ready launched cancelled)
+  @launch_modes ~w(manual_handoff direct_codex)
   @check_statuses ~w(pending passed failed waived not_applicable)
   @risk_levels ~w(low normal high critical)
   @priorities ~w(low normal high urgent)
@@ -26,6 +30,10 @@ defmodule Afp.Factory do
   def packet_states, do: @packet_states
   def session_statuses, do: @session_statuses
   def release_statuses, do: @release_statuses
+  def demand_statuses, do: @demand_statuses
+  def demand_confidences, do: @demand_confidences
+  def launch_request_statuses, do: @launch_request_statuses
+  def launch_modes, do: @launch_modes
   def check_statuses, do: @check_statuses
   def risk_levels, do: @risk_levels
   def priorities, do: @priorities

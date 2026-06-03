@@ -32,6 +32,7 @@ defmodule Afp.Factory.Portfolio.App do
     has_many :repo_scans, Afp.Factory.Repositories.RepoScan
     has_many :growth_experiments, Afp.Factory.Growth.GrowthExperiment
     has_many :maintenance_obligations, Afp.Factory.Maintenance.MaintenanceObligation
+    has_many :promoted_demand_items, Afp.Factory.Demand.DemandItem, foreign_key: :promoted_app_id
 
     timestamps()
   end

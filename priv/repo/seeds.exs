@@ -2,6 +2,9 @@
 #
 #     mix run priv/repo/seeds.exs
 
+alias Afp.Factory.Demand
+alias Afp.Factory.Demand.CodexLaunchRequest
+alias Afp.Factory.Demand.DemandItem
 alias Afp.Factory.Evidence
 alias Afp.Factory.Evidence.EvidenceLink
 alias Afp.Factory.Evidence.EvidencePacket
@@ -62,6 +65,37 @@ seed_apps = [
 ]
 
 Settings.add_repository_root("/Users/ewan/Developer/Apps")
+
+demand_title = "Find a narrow screenshot workflow pain"
+
+demand_item =
+  Repo.get_by(DemandItem, title: demand_title) ||
+    case Demand.create_demand_item(%{
+           "title" => demand_title,
+           "status" => "validating",
+           "source" => "manual research",
+           "target_user" => "indie app developer shipping many small apps",
+           "job_to_be_done" => "Prepare App Store screenshots without losing a day",
+           "demand_signal" => "Repeated local screenshot framing and resize work across apps.",
+           "incumbent_weakness" => "Generic design tools do not understand App Store slot rules.",
+           "wedge_hypothesis" => "A local-first screenshot prep packet can save release time.",
+           "validation_action" =>
+             "Collect three recent screenshot-prep failures and define the smallest reusable workflow.",
+           "evidence_summary" => "Seeded demand item based on repeated release-prep work.",
+           "confidence" => "medium"
+         }) do
+      {:ok, demand_item} -> demand_item
+    end
+
+Repo.get_by(CodexLaunchRequest,
+  demand_item_id: demand_item.id,
+  title: "Validate screenshot workflow demand"
+) ||
+  Demand.create_launch_request_from_demand(demand_item, %{
+    "title" => "Validate screenshot workflow demand",
+    "risk_level" => "normal",
+    "status" => "ready"
+  })
 
 apps =
   Enum.map(seed_apps, fn attrs ->
