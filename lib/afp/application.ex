@@ -10,6 +10,7 @@ defmodule Afp.Application do
     children = [
       AfpWeb.Telemetry,
       Afp.Repo,
+      {Oban, Application.fetch_env!(:afp, Oban)},
       {DNSCluster, query: Application.get_env(:afp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Afp.PubSub},
       # Start a worker by calling: Afp.Worker.start_link(arg)

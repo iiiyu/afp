@@ -11,3 +11,4 @@ load only the detailed guidance relevant to the current task.
 - `agent_framework_rules.md` - Agent framework guide: detailed Elixir, Phoenix, Ecto, router, controller, schema, and HEEx implementation rules referenced from `AGENTS.md`.
 - `agent_liveview_rules.md` - Agent LiveView guide: detailed LiveView, stream, test, JavaScript interop, and form rules referenced from `AGENTS.md`.
 - `agent_ui_rules.md` - Agent UI guide: detailed Tailwind, CSS, JavaScript bundle, and visual presentation rules referenced from `AGENTS.md`.
+- `database_schema.md` - Current PostgreSQL schema summary, core constraints, and controlled state fields.

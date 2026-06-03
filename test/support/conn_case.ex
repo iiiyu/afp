@@ -27,6 +27,7 @@ defmodule AfpWeb.ConnCase do
       # Import conveniences for testing with connections
       import Plug.Conn
       import Phoenix.ConnTest
+      import Phoenix.LiveViewTest
       import AfpWeb.ConnCase
     end
   end

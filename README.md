@@ -1,18 +1,37 @@
-# Afp
+# App Factory Control Plane
 
-To start your Phoenix server:
+Phoenix LiveView MVP for a local-first one-person app factory control plane. It
+tracks app lifecycle state, next actions, tickets, harness packets, Codex
+sessions, release readiness, evidence, metrics snapshots, and local Codex hook
+intake.
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+## Running Locally
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+1. Run `mix setup` to install dependencies, create/migrate the PostgreSQL database, and build assets.
+2. Start Phoenix with `mix phx.server` or `iex -S mix phx.server`.
+3. Open [`localhost:4000`](http://localhost:4000). The app loads the Today command center.
 
-Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
+## Main Surfaces
 
-## Learn more
+- Today - Focus queue, review queue, unlinked sessions, release blockers, stale apps, and quick ticket creation.
+- Apps - Portfolio table, filters, app creation, and app detail cockpit.
+- Board - Ticket columns and harness packet builder.
+- Sessions - Codex hook/session inbox, linking, ignore, and manual review.
+- Releases - Release targets, checklist gates, evidence attachment, and manual release transitions.
+- Evidence - Manual evidence capture and multi-object linking.
+- Metrics - Manual business snapshots and stale-live-app flags.
+- Settings - Repository roots, Codex intake settings, privacy defaults, and JSONL spool import.
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://hexdocs.pm/phoenix/overview.html
-* Docs: https://hexdocs.pm/phoenix
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+## Codex Hook Intake
+
+The local HTTP receiver is:
+
+```text
+POST http://127.0.0.1:4000/api/codex/hooks
+```
+
+It stores raw hook payloads before processing and updates/creates Codex session
+rows by `session_id`. JSONL spool import is configured in Settings and uses
+stored byte offsets to avoid duplicate imports.
+
+Run `mix precommit` before committing changes.

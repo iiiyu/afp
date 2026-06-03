@@ -86,6 +86,7 @@ defmodule AfpWeb do
       import Phoenix.HTML
       # Core UI components
       import AfpWeb.CoreComponents
+      import AfpWeb.FactoryComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

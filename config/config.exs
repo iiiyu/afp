@@ -9,7 +9,12 @@ import Config
 
 config :afp,
   ecto_repos: [Afp.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime_usec]
+
+config :afp, Oban,
+  repo: Afp.Repo,
+  queues: [default: 10, intake: 5],
+  plugins: [Oban.Plugins.Pruner]
 
 # Configure the endpoint
 config :afp, AfpWeb.Endpoint,

@@ -35,40 +35,63 @@ defmodule AfpWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
+    <div class="min-h-screen">
+      <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+        <div class="flex min-h-14 items-center gap-4 px-4 sm:px-6 lg:px-8">
+          <.link navigate={~p"/today"} class="flex items-center gap-2 text-sm font-semibold">
+            <span class="flex size-8 items-center justify-center rounded bg-slate-950 text-white dark:bg-white dark:text-slate-950">
+              AFP
+            </span>
+            <span>App Factory</span>
+          </.link>
+          <nav class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
+            <.nav_item navigate={~p"/today"} icon="hero-bolt">Today</.nav_item>
+            <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack">Apps</.nav_item>
+            <.nav_item navigate={~p"/board"} icon="hero-view-columns">Board</.nav_item>
+            <.nav_item navigate={~p"/sessions"} icon="hero-command-line">Sessions</.nav_item>
+            <.nav_item navigate={~p"/releases"} icon="hero-rocket-launch">Releases</.nav_item>
+            <.nav_item navigate={~p"/evidence"} icon="hero-shield-check">Evidence</.nav_item>
+            <.nav_item navigate={~p"/metrics"} icon="hero-chart-bar">Metrics</.nav_item>
+            <.nav_item navigate={~p"/settings"} icon="hero-cog-6-tooth">Settings</.nav_item>
+          </nav>
+          <.theme_toggle />
+        </div>
+      </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+      <main class="px-4 py-4 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-[1800px] space-y-4">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+
+      <.flash_group flash={@flash} />
+    </div>
+    """
+  end
+
+  attr :navigate, :string, required: true
+  attr :icon, :string, required: true
+  slot :inner_block, required: true
+
+  defp nav_item(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class="inline-flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+    >
+      <.icon name={@icon} class="size-4" />
+      <span>{render_slot(@inner_block)}</span>
+    </.link>
+    """
+  end
+
+  def app_shell(assigns) do
+    ~H"""
+    <main>
+      <div>
         {render_slot(@inner_block)}
       </div>
     </main>
-
-    <.flash_group flash={@flash} />
     """
   end
 
@@ -122,29 +145,30 @@ defmodule AfpWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
+    <div class="flex items-center rounded border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900">
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="rounded p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        title="System theme"
       >
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="rounded p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        title="Light theme"
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
 
       <button
-        class="flex p-2 cursor-pointer w-1/3"
+        class="rounded p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        title="Dark theme"
       >
         <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
