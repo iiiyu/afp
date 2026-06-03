@@ -96,7 +96,7 @@ defmodule AfpWeb.TodayLive do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.85fr)]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.85fr)]">
           <main class="space-y-4">
             <.panel title="Focus Queue">
               <:subtitle>
@@ -108,19 +108,23 @@ defmodule AfpWeb.TodayLive do
               <div class="divide-y divide-slate-100 dark:divide-slate-800">
                 <div
                   :for={item <- @dashboard.focus_queue}
-                  class="flex items-start justify-between gap-4 py-3"
+                  class="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
+                    <div class="grid max-w-full gap-2 sm:flex sm:flex-wrap sm:items-center">
                       <span class="text-sm font-semibold">{item.title}</span>
-                      <.status_badge status={item.reason} />
-                      <.status_badge :if={item[:app]} status={item.app.lifecycle_stage} />
+                      <.status_badge status={item.reason} class="justify-self-start" />
+                      <.status_badge
+                        :if={item[:app]}
+                        status={item.app.lifecycle_stage}
+                        class="justify-self-start"
+                      />
                     </div>
                     <p class="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
                       {item.detail}
                     </p>
                   </div>
-                  <div class="flex shrink-0 items-center gap-2">
+                  <div class="flex shrink-0 items-center gap-2 self-start sm:self-auto">
                     <.link
                       navigate={item.link}
                       class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"

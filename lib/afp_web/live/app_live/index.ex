@@ -106,7 +106,7 @@ defmodule AfpWeb.AppLive.Index do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_380px]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.4fr)_380px]">
           <main class="space-y-4">
             <.panel title="Portfolio">
               <:subtitle>
@@ -181,7 +181,7 @@ defmodule AfpWeb.AppLive.Index do
               </.disclosure>
 
               <div class="overflow-x-auto">
-                <table class="min-w-full text-left text-sm">
+                <table class="min-w-[1100px] text-left text-sm">
                   <thead class="border-y border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-950">
                     <tr>
                       <th class="px-2 py-2">App</th>

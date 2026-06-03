@@ -88,7 +88,7 @@ defmodule AfpWeb.EvidenceLive do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <main>
             <.panel title="Evidence Store">
               <:subtitle>

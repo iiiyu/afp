@@ -199,7 +199,7 @@ defmodule AfpWeb.BoardLive do
                 :for={status <- Factory.ticket_statuses()}
                 id={"ticket-column-#{status}"}
                 data-ticket-drop-status={status}
-                class="min-w-0 rounded border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
+                class="min-w-44 rounded border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
               >
                 <header class="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-800">
                   <h2 class="text-sm font-semibold">{Factory.labelize(status)}</h2>
@@ -227,8 +227,8 @@ defmodule AfpWeb.BoardLive do
                     draggable="true"
                     class="cursor-grab rounded border border-slate-200 bg-white p-3 text-sm shadow-sm transition hover:border-slate-300 active:cursor-grabbing dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
                   >
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="min-w-0 font-medium leading-snug">{ticket.title}</div>
+                    <div class="space-y-2">
+                      <div class="break-words font-medium leading-snug">{ticket.title}</div>
                       <.status_badge status={ticket.risk_level} />
                     </div>
                     <div class="mt-1 text-xs text-slate-500">
@@ -280,7 +280,7 @@ defmodule AfpWeb.BoardLive do
             </div>
           </.panel>
 
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+          <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
             <.panel title="Board Actions">
               <.disclosure
                 title="Harness Packet Builder"

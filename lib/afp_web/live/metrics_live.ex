@@ -60,7 +60,7 @@ defmodule AfpWeb.MetricsLive do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <main class="space-y-4">
             <.panel title="Stale Or Missing Live Metrics">
               <div :if={@stale_apps == []}>

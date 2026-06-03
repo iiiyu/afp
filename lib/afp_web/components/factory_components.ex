@@ -18,7 +18,7 @@ defmodule AfpWeb.FactoryComponents do
   def page_header(assigns) do
     ~H"""
     <header class={[
-      "rounded border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900",
+      "w-full max-w-full rounded border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900",
       @class
     ]}>
       <div class="flex flex-wrap items-start justify-between gap-4">
@@ -33,7 +33,10 @@ defmodule AfpWeb.FactoryComponents do
           <p :if={@subtitle} class="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
             {@subtitle}
           </p>
-          <div :if={@meta != []} class="mt-3 flex flex-wrap items-center gap-2">
+          <div
+            :if={@meta != []}
+            class="mt-3 grid gap-2 sm:flex sm:flex-wrap sm:items-center"
+          >
             {render_slot(@meta)}
           </div>
         </div>
@@ -54,7 +57,7 @@ defmodule AfpWeb.FactoryComponents do
   def panel(assigns) do
     ~H"""
     <section class={[
-      "rounded border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900",
+      "w-full max-w-full rounded border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900",
       @class
     ]}>
       <header class="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
@@ -122,13 +125,13 @@ defmodule AfpWeb.FactoryComponents do
     <.link
       :if={@navigate}
       navigate={@navigate}
-      class="block rounded border border-slate-200 bg-white px-3 py-2 text-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+      class="block min-w-0 rounded border border-slate-200 bg-white px-3 py-2 text-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
     >
       <.summary_item_content title={@title} value={@value} status={@status} hint={@hint} />
     </.link>
     <div
       :if={!@navigate}
-      class="rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+      class="min-w-0 rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
     >
       <.summary_item_content title={@title} value={@value} status={@status} hint={@hint} />
     </div>

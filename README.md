@@ -216,6 +216,8 @@ for the Phase 2 scope and verification contract.
 
 The UI is organized around a consistent reading order:
 
+- Global sidebar: persistent navigation and theme controls stay beside the
+  working surface instead of competing with page content above it.
 - Page header: what this screen is for and the few counters that orient the user.
 - Primary area: the one thing the user is most likely to read or decide from.
 - Secondary layers: related queues, history, diagnostics, and advanced fields in

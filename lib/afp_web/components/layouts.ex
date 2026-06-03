@@ -35,34 +35,57 @@ defmodule AfpWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <div class="min-h-screen">
-      <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-        <div class="flex min-h-14 items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <.link navigate={~p"/today"} class="flex items-center gap-2 text-sm font-semibold">
+    <div class="min-h-screen lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside class="sticky top-0 z-40 hidden h-screen flex-col border-r border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:flex">
+        <div class="flex min-h-16 items-center border-b border-slate-100 px-3 dark:border-slate-900 lg:px-4">
+          <.link
+            navigate={~p"/today"}
+            class="flex min-w-0 items-center gap-3 text-sm font-semibold"
+            title="App Factory"
+          >
             <span class="flex size-8 items-center justify-center rounded bg-slate-950 text-white dark:bg-white dark:text-slate-950">
               AFP
             </span>
-            <span>App Factory</span>
+            <span class="hidden truncate lg:inline">App Factory</span>
           </.link>
-          <nav class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
-            <.nav_item navigate={~p"/today"} icon="hero-bolt">Today</.nav_item>
-            <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack">Apps</.nav_item>
-            <.nav_item navigate={~p"/board"} icon="hero-view-columns">Board</.nav_item>
-            <.nav_item navigate={~p"/sessions"} icon="hero-command-line">Sessions</.nav_item>
-            <.nav_item navigate={~p"/releases"} icon="hero-rocket-launch">Releases</.nav_item>
-            <.nav_item navigate={~p"/evidence"} icon="hero-shield-check">Evidence</.nav_item>
-            <.nav_item navigate={~p"/metrics"} icon="hero-chart-bar">Metrics</.nav_item>
-            <.nav_item navigate={~p"/settings"} icon="hero-cog-6-tooth">Settings</.nav_item>
-          </nav>
-          <.theme_toggle />
         </div>
-      </header>
 
-      <main class="px-4 py-4 sm:px-6 lg:px-8">
-        <div class="mx-auto max-w-[1800px] space-y-4">
+        <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-4 lg:px-3">
+          <nav class="flex flex-col gap-1 text-sm">
+            <.nav_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
+            <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
+            <.nav_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
+            <.nav_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
+            <.nav_item navigate={~p"/releases"} icon="hero-rocket-launch" label="Releases" />
+            <.nav_item navigate={~p"/evidence"} icon="hero-shield-check" label="Evidence" />
+            <.nav_item navigate={~p"/metrics"} icon="hero-chart-bar" label="Metrics" />
+            <.nav_item navigate={~p"/settings"} icon="hero-cog-6-tooth" label="Settings" />
+          </nav>
+        </div>
+
+        <div class="border-t border-slate-100 px-2 py-3 dark:border-slate-900 lg:px-3">
+          <.theme_toggle class="mx-auto flex-col lg:flex-row" />
+        </div>
+      </aside>
+
+      <main class="min-w-0 px-4 py-4 pb-20 sm:px-6 lg:px-8 lg:pb-4">
+        <div class="mx-auto w-full min-w-0 max-w-[1800px] space-y-4">
           {render_slot(@inner_block)}
         </div>
       </main>
+
+      <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
+        <div class="flex items-center justify-between gap-1">
+          <.nav_icon_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
+          <.nav_icon_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
+          <.nav_icon_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
+          <.nav_icon_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
+          <.nav_icon_item navigate={~p"/releases"} icon="hero-rocket-launch" label="Releases" />
+          <.nav_icon_item navigate={~p"/evidence"} icon="hero-shield-check" label="Evidence" />
+          <.nav_icon_item navigate={~p"/metrics"} icon="hero-chart-bar" label="Metrics" />
+          <.nav_icon_item navigate={~p"/settings"} icon="hero-cog-6-tooth" label="Settings" />
+        </div>
+      </nav>
 
       <.flash_group flash={@flash} />
     </div>
@@ -71,16 +94,35 @@ defmodule AfpWeb.Layouts do
 
   attr :navigate, :string, required: true
   attr :icon, :string, required: true
-  slot :inner_block, required: true
+  attr :label, :string, required: true
 
   defp nav_item(assigns) do
     ~H"""
     <.link
       navigate={@navigate}
-      class="inline-flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+      aria-label={@label}
+      title={@label}
+      class="flex min-h-10 items-center justify-center gap-3 rounded px-3 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white lg:justify-start"
     >
       <.icon name={@icon} class="size-4" />
-      <span>{render_slot(@inner_block)}</span>
+      <span class="hidden truncate lg:inline">{@label}</span>
+    </.link>
+    """
+  end
+
+  attr :navigate, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+
+  defp nav_icon_item(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      aria-label={@label}
+      title={@label}
+      class="flex size-10 items-center justify-center rounded text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"
+    >
+      <.icon name={@icon} class="size-4" />
     </.link>
     """
   end
@@ -143,9 +185,14 @@ defmodule AfpWeb.Layouts do
 
   See <head> in root.html.heex which applies the theme before page load.
   """
+  attr :class, :any, default: nil
+
   def theme_toggle(assigns) do
     ~H"""
-    <div class="flex items-center rounded border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900">
+    <div class={[
+      "flex items-center rounded border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900",
+      @class
+    ]}>
       <button
         class="rounded p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
         phx-click={JS.dispatch("phx:set-theme")}

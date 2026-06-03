@@ -332,7 +332,7 @@ defmodule AfpWeb.AppLive.Show do
           </:actions>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
           <main class="space-y-4">
             <.panel title="Immediate Execution">
               <:subtitle>

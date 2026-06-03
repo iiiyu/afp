@@ -136,7 +136,7 @@ defmodule AfpWeb.ReleasesLive do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <main class="space-y-4">
             <.panel title="Release Targets">
               <:subtitle>
