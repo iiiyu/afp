@@ -77,101 +77,119 @@ defmodule AfpWeb.EvidenceLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <main>
-          <.panel title="Evidence Store">
-            <:subtitle>
-              Evidence has one primary app and may be linked to tickets, sessions, releases, checks, or metrics.
-            </:subtitle>
-            <div :if={@evidence_packets == []}>
-              <.empty_state message="No evidence packets yet." />
-            </div>
-            <div class="grid gap-3 xl:grid-cols-2">
-              <article
-                :for={packet <- @evidence_packets}
-                class="rounded border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 class="font-semibold">{packet.title}</h2>
-                    <div class="mt-1 flex flex-wrap gap-2">
-                      <.status_badge status={packet.type} />
-                      <.status_badge status={packet.reliability} />
-                    </div>
-                  </div>
-                  <div class="text-xs text-slate-500">{format_datetime(packet.inserted_at)}</div>
-                </div>
-                <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">{packet.summary}</p>
-                <div class="mt-3 space-y-1 text-xs text-slate-500">
-                  <div>App: {packet.app.name}</div>
-                  <div :if={packet.source_path}>Path: {packet.source_path}</div>
-                  <div :if={packet.source_url}>URL: {packet.source_url}</div>
-                  <div>Links: {length(packet.evidence_links)}</div>
-                </div>
-              </article>
-            </div>
-          </.panel>
-        </main>
+      <div class="space-y-4">
+        <.page_header
+          eyebrow="Proof"
+          title="Evidence"
+          subtitle="Stored proof packets and links to app-factory records."
+        >
+          <:meta>
+            <.summary_item title="Packets" value={length(@evidence_packets)} hint="stored evidence" />
+          </:meta>
+        </.page_header>
 
-        <aside>
-          <.panel title="Add Evidence">
-            <.form
-              for={@evidence_form}
-              id="evidence-form"
-              phx-submit="create_evidence"
-              class="space-y-2"
-            >
-              <.input
-                field={@evidence_form[:app_id]}
-                type="select"
-                label="Primary app"
-                prompt="Choose app"
-                options={@app_options}
-              />
-              <.input
-                field={@evidence_form[:type]}
-                type="select"
-                label="Type"
-                options={Factory.options(Factory.evidence_types())}
-              />
-              <.input
-                field={@evidence_form[:summary]}
-                type="textarea"
-                label="Summary"
-                rows="4"
-                required
-              />
-              <.input
-                field={@evidence_form[:title]}
-                label="Title"
-                placeholder="Defaults from summary"
-              />
-              <.input field={@evidence_form[:source_path]} label="Source path" />
-              <.input field={@evidence_form[:source_url]} label="Source URL" />
-              <.input
-                field={@evidence_form[:reliability]}
-                type="select"
-                label="Reliability"
-                options={Factory.options(Factory.reliabilities())}
-              />
-              <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
-                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Optional link
-                </div>
-                <.input
-                  field={@evidence_form[:subject_type]}
-                  type="select"
-                  label="Subject type"
-                  prompt="None"
-                  options={Factory.options(Afp.Factory.Evidence.EvidenceLink.subject_types())}
-                />
-                <.input field={@evidence_form[:subject_id]} label="Subject ID" />
-                <.input field={@evidence_form[:link_reason]} label="Link reason" />
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <main>
+            <.panel title="Evidence Store">
+              <:subtitle>
+                Evidence has one primary app and may be linked to tickets, sessions, releases, checks, or metrics.
+              </:subtitle>
+              <div :if={@evidence_packets == []}>
+                <.empty_state message="No evidence packets yet." />
               </div>
-              <.button type="submit" variant="primary">Save evidence</.button>
-            </.form>
-          </.panel>
-        </aside>
+              <div class="grid gap-3 xl:grid-cols-2">
+                <article
+                  :for={packet <- @evidence_packets}
+                  class="rounded border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 class="font-semibold">{packet.title}</h2>
+                      <div class="mt-1 flex flex-wrap gap-2">
+                        <.status_badge status={packet.type} />
+                        <.status_badge status={packet.reliability} />
+                      </div>
+                    </div>
+                    <div class="text-xs text-slate-500">{format_datetime(packet.inserted_at)}</div>
+                  </div>
+                  <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">{packet.summary}</p>
+                  <div class="mt-3 space-y-1 text-xs text-slate-500">
+                    <div>App: {packet.app.name}</div>
+                    <div :if={packet.source_path}>Path: {packet.source_path}</div>
+                    <div :if={packet.source_url}>URL: {packet.source_url}</div>
+                    <div>Links: {length(packet.evidence_links)}</div>
+                  </div>
+                </article>
+              </div>
+            </.panel>
+          </main>
+
+          <aside>
+            <.panel title="Evidence Actions">
+              <.disclosure
+                title="Add Evidence"
+                subtitle="Capture proof, then optionally link it to a subject."
+                open
+              >
+                <.form
+                  for={@evidence_form}
+                  id="evidence-form"
+                  phx-submit="create_evidence"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@evidence_form[:app_id]}
+                    type="select"
+                    label="Primary app"
+                    prompt="Choose app"
+                    options={@app_options}
+                  />
+                  <.input
+                    field={@evidence_form[:type]}
+                    type="select"
+                    label="Type"
+                    options={Factory.options(Factory.evidence_types())}
+                  />
+                  <.input
+                    field={@evidence_form[:summary]}
+                    type="textarea"
+                    label="Summary"
+                    rows="4"
+                    required
+                  />
+                  <.input
+                    field={@evidence_form[:title]}
+                    label="Title"
+                    placeholder="Defaults from summary"
+                  />
+                  <.input field={@evidence_form[:source_path]} label="Source path" />
+                  <.input field={@evidence_form[:source_url]} label="Source URL" />
+                  <.input
+                    field={@evidence_form[:reliability]}
+                    type="select"
+                    label="Reliability"
+                    options={Factory.options(Factory.reliabilities())}
+                  />
+                  <.disclosure
+                    title="Optional link"
+                    subtitle="Attach this evidence to another object."
+                  >
+                    <.input
+                      field={@evidence_form[:subject_type]}
+                      type="select"
+                      label="Subject type"
+                      prompt="None"
+                      options={Factory.options(Afp.Factory.Evidence.EvidenceLink.subject_types())}
+                    />
+                    <.input field={@evidence_form[:subject_id]} label="Subject ID" />
+                    <.input field={@evidence_form[:link_reason]} label="Link reason" />
+                  </.disclosure>
+                  <.button type="submit" variant="primary">Save evidence</.button>
+                </.form>
+              </.disclosure>
+            </.panel>
+          </aside>
+        </div>
       </div>
     </Layouts.app>
     """

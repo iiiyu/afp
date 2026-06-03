@@ -9,6 +9,10 @@ control plane. Screens stay thin: they render compact operational UI, call
 `Afp.Factory.*` contexts for domain rules, and reload their read model when the
 factory event log broadcasts updates.
 
+Each page follows the same information hierarchy: a page header, a primary
+reading surface, collapsible secondary context, and a separate action rail for
+forms that mutate state.
+
 ## File Inventory
 
 - `today_live.ex` - Today command center with focus queues and quick ticket creation.

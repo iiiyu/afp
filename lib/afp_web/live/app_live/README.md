@@ -4,11 +4,13 @@
 
 ## Architecture Summary
 
-App LiveViews own the portfolio scan and single-app cockpit. They use the
-portfolio context for lifecycle/business state and call the adjacent work,
-release, evidence, session, and metrics contexts only for app-scoped actions.
+App LiveViews own the portfolio scan and single-app cockpit. The index keeps the
+portfolio table as the primary read model, while the show page layers execution,
+operational context, business loops, and app actions. They use the portfolio
+context for lifecycle/business state and call adjacent work, release, evidence,
+session, and metrics contexts only for app-scoped actions.
 
 ## File Inventory
 
-- `index.ex` - Portfolio table with filters and app creation.
-- `show.ex` - App detail cockpit and quick creation/actions for linked objects.
+- `index.ex` - Portfolio table with lower-level filters and app creation actions.
+- `show.ex` - App detail cockpit with execution, context, business-loop, and action layers.

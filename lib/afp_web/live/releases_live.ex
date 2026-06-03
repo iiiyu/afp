@@ -120,162 +120,199 @@ defmodule AfpWeb.ReleasesLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <main class="space-y-4">
-          <.panel title="Release Targets">
-            <:subtitle>
-              Ready for review is blocked until required checklist items pass, are waived with reason, or are marked not applicable.
-            </:subtitle>
-            <div :if={@releases == []}>
-              <.empty_state message="No release targets yet." />
-            </div>
-            <article
-              :for={release <- @releases}
-              class="mb-4 rounded border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
-            >
-              <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
-                <div>
-                  <h2 class="font-semibold">{release.app.name} · {release.platform}</h2>
-                  <div class="mt-1 text-sm text-slate-500">
-                    {release.version || release.label} · build {release.build || "blank"}
-                  </div>
-                </div>
-                <.status_badge status={release.status} />
-              </header>
+      <div class="space-y-4">
+        <.page_header
+          eyebrow="Shipping"
+          title="Releases"
+          subtitle="Release targets, checklist gates, and manual shipping decisions."
+        >
+          <:meta>
+            <.summary_item title="Targets" value={length(@releases)} hint="tracked releases" />
+            <.summary_item
+              title="Blocked"
+              value={Enum.count(@releases, &(&1.status == "blocked"))}
+              hint="needs action"
+            />
+          </:meta>
+        </.page_header>
 
-              <div class="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <div class="space-y-2">
-                  <div
-                    :for={check <- Enum.sort_by(release.release_check_items, & &1.position)}
-                    class="rounded border border-slate-200 p-3 dark:border-slate-800"
-                  >
-                    <div class="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <div class="font-medium">{check.title}</div>
-                        <div class="text-xs text-slate-500">
-                          {check.category} · {if check.required, do: "required", else: "optional"}
-                        </div>
-                      </div>
-                      <.status_badge status={check.status} />
-                    </div>
-                    <.form
-                      for={to_form(%{}, as: :check)}
-                      id={"check-#{check.id}"}
-                      phx-submit="update_check"
-                      class="mt-3 grid gap-2 md:grid-cols-4"
-                    >
-                      <input type="hidden" name="check_id" value={check.id} />
-                      <.input
-                        name="check[status]"
-                        id={"check-status-#{check.id}"}
-                        type="select"
-                        label="Status"
-                        options={Factory.options(Factory.check_statuses())}
-                        value={check.status}
-                      />
-                      <.input
-                        name="check[waiver_reason]"
-                        id={"check-waiver-#{check.id}"}
-                        label="Waiver reason"
-                        value={check.waiver_reason}
-                      />
-                      <.input
-                        name="check[decision_note]"
-                        id={"check-note-#{check.id}"}
-                        label="Decision note"
-                        value={check.decision_note}
-                      />
-                      <div class="flex items-end gap-2">
-                        <button class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                          Save
-                        </button>
-                        <button
-                          :if={check.status == "failed"}
-                          type="button"
-                          phx-click="create_check_ticket"
-                          phx-value-id={check.id}
-                          class="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-200 dark:hover:bg-red-950"
-                        >
-                          Ticket
-                        </button>
-                      </div>
-                    </.form>
-                    <.form
-                      :if={@evidence_options != []}
-                      for={to_form(%{}, as: :evidence)}
-                      id={"check-evidence-#{check.id}"}
-                      phx-submit="attach_check_evidence"
-                      class="mt-2 flex gap-2"
-                    >
-                      <input type="hidden" name="check_id" value={check.id} />
-                      <.input
-                        name="evidence[evidence_packet_id]"
-                        id={"check-evidence-id-#{check.id}"}
-                        type="select"
-                        label="Evidence"
-                        prompt="Attach evidence"
-                        options={@evidence_options}
-                      />
-                      <button class="mt-5 h-9 rounded border border-slate-300 px-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        Attach
-                      </button>
-                    </.form>
-                  </div>
-                </div>
-
-                <aside>
-                  <.form
-                    for={to_form(%{}, as: :transition)}
-                    id={"release-transition-#{release.id}"}
-                    phx-submit="transition_release"
-                    class="space-y-2 rounded border border-slate-200 p-3 dark:border-slate-800"
-                  >
-                    <input type="hidden" name="release_id" value={release.id} />
-                    <.input
-                      name="transition[status]"
-                      id={"release-status-#{release.id}"}
-                      type="select"
-                      label="Move to"
-                      options={Factory.options(Factory.release_statuses())}
-                      value={release.status}
-                    />
-                    <.input
-                      name="transition[decision_note]"
-                      id={"release-note-#{release.id}"}
-                      label="Decision note"
-                    />
-                    <.input
-                      name="transition[released_at]"
-                      id={"release-live-date-#{release.id}"}
-                      type="datetime-local"
-                      label="Released at"
-                    />
-                    <.button type="submit">Update release</.button>
-                  </.form>
-                </aside>
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <main class="space-y-4">
+            <.panel title="Release Targets">
+              <:subtitle>
+                Ready for review is blocked until required checklist items pass, are waived with reason, or are marked not applicable.
+              </:subtitle>
+              <div :if={@releases == []}>
+                <.empty_state message="No release targets yet." />
               </div>
-            </article>
-          </.panel>
-        </main>
+              <article
+                :for={release <- @releases}
+                class="mb-4 rounded border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
+              >
+                <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
+                  <div>
+                    <h2 class="font-semibold">{release.app.name} · {release.platform}</h2>
+                    <div class="mt-1 text-sm text-slate-500">
+                      {release.version || release.label} · build {release.build || "blank"}
+                    </div>
+                  </div>
+                  <.status_badge status={release.status} />
+                </header>
 
-        <aside>
-          <.panel title="Create Release Target">
-            <.form for={@release_form} id="release-form" phx-submit="create_release" class="space-y-2">
-              <.input
-                field={@release_form[:app_id]}
-                type="select"
-                label="App"
-                prompt="Choose app"
-                options={@app_options}
-              />
-              <.input field={@release_form[:platform]} label="Platform" placeholder="ios" />
-              <.input field={@release_form[:version]} label="Version" />
-              <.input field={@release_form[:build]} label="Build" />
-              <.input field={@release_form[:label]} label="Label" />
-              <.button type="submit" variant="primary">Create release</.button>
-            </.form>
-          </.panel>
-        </aside>
+                <div class="p-4">
+                  <.disclosure
+                    title="Checklist gates"
+                    subtitle="Required readiness checks for this release target."
+                    open={release.status in ["preparing", "blocked", "ready_for_review"]}
+                  >
+                    <div class="space-y-2">
+                      <div
+                        :for={check <- Enum.sort_by(release.release_check_items, & &1.position)}
+                        class="rounded border border-slate-200 p-3 dark:border-slate-800"
+                      >
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <div class="font-medium">{check.title}</div>
+                            <div class="text-xs text-slate-500">
+                              {check.category} · {if check.required, do: "required", else: "optional"}
+                            </div>
+                          </div>
+                          <.status_badge status={check.status} />
+                        </div>
+                        <.form
+                          for={to_form(%{}, as: :check)}
+                          id={"check-#{check.id}"}
+                          phx-submit="update_check"
+                          class="mt-3 grid gap-2 md:grid-cols-4"
+                        >
+                          <input type="hidden" name="check_id" value={check.id} />
+                          <.input
+                            name="check[status]"
+                            id={"check-status-#{check.id}"}
+                            type="select"
+                            label="Status"
+                            options={Factory.options(Factory.check_statuses())}
+                            value={check.status}
+                          />
+                          <.input
+                            name="check[waiver_reason]"
+                            id={"check-waiver-#{check.id}"}
+                            label="Waiver reason"
+                            value={check.waiver_reason}
+                          />
+                          <.input
+                            name="check[decision_note]"
+                            id={"check-note-#{check.id}"}
+                            label="Decision note"
+                            value={check.decision_note}
+                          />
+                          <div class="flex items-end gap-2">
+                            <button class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                              Save
+                            </button>
+                            <button
+                              :if={check.status == "failed"}
+                              type="button"
+                              phx-click="create_check_ticket"
+                              phx-value-id={check.id}
+                              class="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-200 dark:hover:bg-red-950"
+                            >
+                              Ticket
+                            </button>
+                          </div>
+                        </.form>
+                        <.form
+                          :if={@evidence_options != []}
+                          for={to_form(%{}, as: :evidence)}
+                          id={"check-evidence-#{check.id}"}
+                          phx-submit="attach_check_evidence"
+                          class="mt-2 flex gap-2"
+                        >
+                          <input type="hidden" name="check_id" value={check.id} />
+                          <.input
+                            name="evidence[evidence_packet_id]"
+                            id={"check-evidence-id-#{check.id}"}
+                            type="select"
+                            label="Evidence"
+                            prompt="Attach evidence"
+                            options={@evidence_options}
+                          />
+                          <button class="mt-5 h-9 rounded border border-slate-300 px-2 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                            Attach
+                          </button>
+                        </.form>
+                      </div>
+                    </div>
+                  </.disclosure>
+
+                  <.disclosure
+                    title="Release decision"
+                    subtitle="Manual state movement with required notes."
+                  >
+                    <.form
+                      for={to_form(%{}, as: :transition)}
+                      id={"release-transition-#{release.id}"}
+                      phx-submit="transition_release"
+                      class="space-y-2 rounded border border-slate-200 p-3 dark:border-slate-800"
+                    >
+                      <input type="hidden" name="release_id" value={release.id} />
+                      <.input
+                        name="transition[status]"
+                        id={"release-status-#{release.id}"}
+                        type="select"
+                        label="Move to"
+                        options={Factory.options(Factory.release_statuses())}
+                        value={release.status}
+                      />
+                      <.input
+                        name="transition[decision_note]"
+                        id={"release-note-#{release.id}"}
+                        label="Decision note"
+                      />
+                      <.input
+                        name="transition[released_at]"
+                        id={"release-live-date-#{release.id}"}
+                        type="datetime-local"
+                        label="Released at"
+                      />
+                      <.button type="submit">Update release</.button>
+                    </.form>
+                  </.disclosure>
+                </div>
+              </article>
+            </.panel>
+          </main>
+
+          <aside>
+            <.panel title="Release Actions">
+              <.disclosure
+                title="Create Release Target"
+                subtitle="Start a new platform/version readiness track."
+                open
+              >
+                <.form
+                  for={@release_form}
+                  id="release-form"
+                  phx-submit="create_release"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@release_form[:app_id]}
+                    type="select"
+                    label="App"
+                    prompt="Choose app"
+                    options={@app_options}
+                  />
+                  <.input field={@release_form[:platform]} label="Platform" placeholder="ios" />
+                  <.input field={@release_form[:version]} label="Version" />
+                  <.input field={@release_form[:build]} label="Build" />
+                  <.input field={@release_form[:label]} label="Label" />
+                  <.button type="submit" variant="primary">Create release</.button>
+                </.form>
+              </.disclosure>
+            </.panel>
+          </aside>
+        </div>
       </div>
     </Layouts.app>
     """

@@ -195,21 +195,33 @@ for the Phase 2 scope and verification contract.
 
 ## Main Surfaces
 
-- **Today**: focus queue, stopped sessions, unlinked sessions, release blockers,
-  stale metrics, and quick ticket creation.
-- **Apps**: lifecycle/posture/health filters, portfolio table, app creation, and
-  app detail cockpit.
-- **Board**: draggable ticket workflow, lifecycle gate filters, review notes,
-  and evidence-aware done/blocked transitions.
-- **Sessions**: Codex hook/session inbox, app matching, linking, review, ignore,
-  and ticket creation from a session.
-- **Releases**: release targets, checklist gates, evidence attachment, and
-  operator-controlled release transitions.
-- **Evidence**: manual evidence packets and links to apps, tickets, sessions,
-  releases, checklist items, and metrics.
-- **Metrics**: manual business snapshots and stale-live-app flags.
-- **Settings**: repository roots, Codex intake mode, transcript privacy defaults,
-  JSONL spool offsets, repository scans, and scan jobs.
+- **Today**: focus queue as the primary command surface, with supporting review,
+  release, business, repository, and session queues grouped below it.
+- **Apps**: portfolio table as the primary read model, with filters and app
+  creation separated into lower-level controls.
+- **Board**: draggable ticket board as the primary work surface, with harness
+  packet creation and handoff history in secondary action layers.
+- **Sessions**: stopped-session review first, with full inbox, linking, and hook
+  diagnostics grouped as lower-level context.
+- **Releases**: release target summary first, with checklist gates and transition
+  controls nested under each release.
+- **Evidence**: proof packet store first, with capture and optional linking
+  separated into action layers.
+- **Metrics**: stale live-app metrics first, with historical snapshots and
+  extended metric fields nested below.
+- **Settings**: repository scope first, with Codex intake, import controls, and
+  scan history grouped as operational sublayers.
+
+## Information Hierarchy
+
+The UI is organized around a consistent reading order:
+
+- Page header: what this screen is for and the few counters that orient the user.
+- Primary area: the one thing the user is most likely to read or decide from.
+- Secondary layers: related queues, history, diagnostics, and advanced fields in
+  collapsible groups.
+- Action rail: creation and mutation forms grouped separately from the primary
+  read model.
 
 ## Running Locally
 

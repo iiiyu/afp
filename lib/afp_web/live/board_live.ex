@@ -135,239 +135,282 @@ defmodule AfpWeb.BoardLive do
     ~H"""
     <Layouts.app flash={@flash}>
       <div class="space-y-4">
-        <.panel title="Ticket Board">
-          <:subtitle>
-            Ticket movement is manual; done and blocked states enforce review/evidence requirements.
-          </:subtitle>
-          <.form
-            for={@filter_form}
-            id="board-filter-form"
-            phx-submit="filter"
-            class="mb-4 grid gap-2 md:grid-cols-4"
-          >
-            <.input
-              field={@filter_form[:app_id]}
-              type="select"
-              label="App"
-              prompt="All"
-              options={@app_options}
+        <.page_header
+          eyebrow="Work routing"
+          title="Board"
+          subtitle="Ticket workflow, packet creation, and recent handoff state."
+        >
+          <:meta>
+            <.summary_item title="Tickets" value={length(@tickets)} hint="current board" />
+            <.summary_item
+              title="Packets"
+              value={length(@harness_packets)}
+              hint="recent handoffs"
             />
-            <.input
-              field={@filter_form[:lifecycle_gate]}
-              type="select"
-              label="Lifecycle gate"
-              prompt="All"
-              options={Factory.options(Factory.lifecycle_stages())}
-            />
-            <.input
-              field={@filter_form[:business_posture]}
-              type="select"
-              label="Business posture"
-              prompt="All"
-              options={Factory.options(Factory.business_postures())}
-            />
-            <.button
-              type="submit"
-              class="mt-5 inline-flex items-center justify-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-            >
-              <.icon name="hero-funnel" class="size-4" /> Filter
-            </.button>
-          </.form>
+          </:meta>
+        </.page_header>
 
-          <div
-            id="ticket-board"
-            phx-hook="TicketBoardDrag"
-            class="grid min-h-[560px] gap-3 overflow-x-auto xl:grid-cols-7"
-          >
-            <section
-              :for={status <- Factory.ticket_statuses()}
-              id={"ticket-column-#{status}"}
-              data-ticket-drop-status={status}
-              class="min-w-64 rounded border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
+        <div class="space-y-4">
+          <.panel title="Ticket Board">
+            <:subtitle>
+              Draggable ticket columns with evidence-aware done and blocked transitions.
+            </:subtitle>
+            <.form
+              for={@filter_form}
+              id="board-filter-form"
+              phx-submit="filter"
+              class="mb-4 grid gap-2 md:grid-cols-4"
             >
-              <header class="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-800">
-                <h2 class="text-sm font-semibold">{Factory.labelize(status)}</h2>
-                <span class="text-xs text-slate-500">
-                  {length(Map.get(@grouped_tickets, status, []))}
-                </span>
-              </header>
-              <div
-                id={"ticket-column-body-#{status}"}
-                data-ticket-drop-status={status}
-                class="space-y-2 p-2 transition-colors"
+              <.input
+                field={@filter_form[:app_id]}
+                type="select"
+                label="App"
+                prompt="All"
+                options={@app_options}
+              />
+              <.input
+                field={@filter_form[:lifecycle_gate]}
+                type="select"
+                label="Lifecycle gate"
+                prompt="All"
+                options={Factory.options(Factory.lifecycle_stages())}
+              />
+              <.input
+                field={@filter_form[:business_posture]}
+                type="select"
+                label="Business posture"
+                prompt="All"
+                options={Factory.options(Factory.business_postures())}
+              />
+              <.button
+                type="submit"
+                class="mt-5 inline-flex items-center justify-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
               >
+                <.icon name="hero-funnel" class="size-4" /> Filter
+              </.button>
+            </.form>
+
+            <div
+              id="ticket-board"
+              phx-hook="TicketBoardDrag"
+              class="grid min-h-[520px] gap-3 overflow-x-auto xl:grid-cols-7"
+            >
+              <section
+                :for={status <- Factory.ticket_statuses()}
+                id={"ticket-column-#{status}"}
+                data-ticket-drop-status={status}
+                class="min-w-0 rounded border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
+              >
+                <header class="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-800">
+                  <h2 class="text-sm font-semibold">{Factory.labelize(status)}</h2>
+                  <span class="text-xs text-slate-500">
+                    {length(Map.get(@grouped_tickets, status, []))}
+                  </span>
+                </header>
                 <div
-                  :if={Map.get(@grouped_tickets, status, []) == []}
-                  class="rounded border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500 dark:border-slate-700"
+                  id={"ticket-column-body-#{status}"}
+                  data-ticket-drop-status={status}
+                  class="space-y-2 p-2 transition-colors"
                 >
-                  Empty
-                </div>
-                <article
-                  :for={ticket <- Map.get(@grouped_tickets, status, [])}
-                  id={"ticket-card-#{ticket.id}"}
-                  data-ticket-card
-                  data-ticket-id={ticket.id}
-                  data-ticket-status={ticket.status}
-                  draggable="true"
-                  class="cursor-grab rounded border border-slate-200 bg-white p-3 text-sm shadow-sm transition hover:border-slate-300 active:cursor-grabbing dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
-                >
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="font-medium">{ticket.title}</div>
-                    <.status_badge status={ticket.risk_level} />
-                  </div>
-                  <div class="mt-1 text-xs text-slate-500">
-                    {ticket.app.name} · {ticket.lifecycle_gate || "No gate"}
-                  </div>
-                  <div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span>{length(ticket.codex_sessions)} sessions</span>
-                    <span>{@evidence_counts[ticket.id]} evidence</span>
-                    <span>{length(ticket.harness_packets)} packets</span>
-                  </div>
-                  <.form
-                    for={to_form(%{}, as: :ticket)}
-                    id={"move-ticket-#{ticket.id}"}
-                    phx-submit="move_ticket"
-                    class="mt-3 space-y-2"
+                  <div
+                    :if={Map.get(@grouped_tickets, status, []) == []}
+                    class="rounded border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500 dark:border-slate-700"
                   >
-                    <input type="hidden" name="ticket_id" value={ticket.id} />
+                    Empty
+                  </div>
+                  <article
+                    :for={ticket <- Map.get(@grouped_tickets, status, [])}
+                    id={"ticket-card-#{ticket.id}"}
+                    data-ticket-card
+                    data-ticket-id={ticket.id}
+                    data-ticket-status={ticket.status}
+                    draggable="true"
+                    class="cursor-grab rounded border border-slate-200 bg-white p-3 text-sm shadow-sm transition hover:border-slate-300 active:cursor-grabbing dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+                  >
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0 font-medium leading-snug">{ticket.title}</div>
+                      <.status_badge status={ticket.risk_level} />
+                    </div>
+                    <div class="mt-1 text-xs text-slate-500">
+                      {ticket.app.name} · {ticket.lifecycle_gate || "No gate"}
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                      <span>{length(ticket.codex_sessions)} sessions</span>
+                      <span>{@evidence_counts[ticket.id]} evidence</span>
+                      <span>{length(ticket.harness_packets)} packets</span>
+                    </div>
+                    <.disclosure
+                      title="Move ticket"
+                      subtitle="Target status, review note, and blocked reason."
+                      class="mt-3"
+                    >
+                      <.form
+                        for={to_form(%{}, as: :ticket)}
+                        id={"move-ticket-#{ticket.id}"}
+                        phx-submit="move_ticket"
+                        class="space-y-2"
+                      >
+                        <input type="hidden" name="ticket_id" value={ticket.id} />
+                        <.input
+                          name="ticket[status]"
+                          id={"ticket-status-#{ticket.id}"}
+                          type="select"
+                          label="Move to"
+                          options={Factory.options(Factory.ticket_statuses())}
+                          value={ticket.status}
+                        />
+                        <.input
+                          name="ticket[review_note]"
+                          id={"ticket-review-note-#{ticket.id}"}
+                          label="Review note"
+                        />
+                        <.input
+                          name="ticket[blocked_reason]"
+                          id={"ticket-blocked-reason-#{ticket.id}"}
+                          label="Blocked reason"
+                        />
+                        <button class="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                          Move
+                        </button>
+                      </.form>
+                    </.disclosure>
+                  </article>
+                </div>
+              </section>
+            </div>
+          </.panel>
+
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+            <.panel title="Board Actions">
+              <.disclosure
+                title="Harness Packet Builder"
+                subtitle="Execution context, output, verification, and review route."
+                open
+              >
+                <.form
+                  for={@packet_form}
+                  id="board-packet-form"
+                  phx-submit="create_packet"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@packet_form[:ticket_id]}
+                    type="select"
+                    label="Ticket"
+                    prompt="Manual packet"
+                    options={@ticket_options}
+                  />
+                  <.input
+                    field={@packet_form[:app_id]}
+                    type="select"
+                    label="App"
+                    prompt="Choose app"
+                    options={@app_options}
+                  />
+                  <.input
+                    field={@packet_form[:state]}
+                    type="select"
+                    label="State"
+                    options={Factory.options(Factory.packet_states())}
+                    value="draft"
+                  />
+                  <.input
+                    field={@packet_form[:objective]}
+                    type="textarea"
+                    label="Objective"
+                    rows="3"
+                  />
+                  <.input
+                    field={@packet_form[:expected_output]}
+                    type="textarea"
+                    label="Expected output"
+                    rows="3"
+                  />
+                  <.input
+                    field={@packet_form[:verification_plan]}
+                    type="textarea"
+                    label="Verification plan"
+                    rows="3"
+                  />
+                  <.input field={@packet_form[:review_route]} label="Review route" />
+                  <.input
+                    field={@packet_form[:risk_level]}
+                    type="select"
+                    label="Risk"
+                    options={Factory.options(Factory.risk_levels())}
+                    value="normal"
+                  />
+                  <.disclosure
+                    title="Advanced packet fields"
+                    subtitle="Context, constraints, and evidence details."
+                  >
                     <.input
-                      name="ticket[status]"
-                      id={"ticket-status-#{ticket.id}"}
-                      type="select"
-                      label="Move to"
-                      options={Factory.options(Factory.ticket_statuses())}
-                      value={ticket.status}
+                      field={@packet_form[:context_inputs]}
+                      type="textarea"
+                      label="Context inputs"
+                      rows="3"
                     />
                     <.input
-                      name="ticket[review_note]"
-                      id={"ticket-review-note-#{ticket.id}"}
-                      label="Review note"
+                      field={@packet_form[:constraints]}
+                      type="textarea"
+                      label="Constraints"
+                      rows="3"
                     />
                     <.input
-                      name="ticket[blocked_reason]"
-                      id={"ticket-blocked-reason-#{ticket.id}"}
-                      label="Blocked reason"
+                      field={@packet_form[:required_evidence]}
+                      type="textarea"
+                      label="Required evidence"
+                      rows="3"
                     />
-                    <button class="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                      Move
+                  </.disclosure>
+                  <.button type="submit" variant="primary">
+                    <.icon name="hero-document-plus" class="size-4" /> Save packet
+                  </.button>
+                </.form>
+              </.disclosure>
+            </.panel>
+
+            <.panel title="Recent Harness Handoffs">
+              <:subtitle>
+                Copyable packet text and launch state.
+              </:subtitle>
+              <div :if={@harness_packets == []}>
+                <.empty_state message="No harness packets yet." />
+              </div>
+              <div class="space-y-3">
+                <article
+                  :for={packet <- @harness_packets}
+                  class="rounded border border-slate-200 p-3 dark:border-slate-800"
+                >
+                  <div class="mb-2 flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-semibold">{packet.objective}</div>
+                      <div class="text-xs text-slate-500">
+                        {packet.app.name} · {packet.state} · {packet.risk_level}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      phx-click="launch_packet"
+                      phx-value-packet-id={packet.id}
+                      class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      Launch
                     </button>
-                  </.form>
+                  </div>
+                  <.disclosure title="Handoff text" subtitle="Packet text for external execution.">
+                    <textarea
+                      id={"handoff-#{packet.id}"}
+                      readonly
+                      rows="10"
+                      class="w-full rounded border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                    ><%= Work.handoff_text(packet) %></textarea>
+                  </.disclosure>
                 </article>
               </div>
-            </section>
+            </.panel>
           </div>
-        </.panel>
-
-        <.panel title="Harness Packet Builder">
-          <:subtitle>
-            Ready packets require app, objective, expected output, and review route; high risk requires explicit confirmation when readied.
-          </:subtitle>
-          <.form
-            for={@packet_form}
-            id="board-packet-form"
-            phx-submit="create_packet"
-            class="grid gap-3 lg:grid-cols-3"
-          >
-            <.input
-              field={@packet_form[:ticket_id]}
-              type="select"
-              label="Ticket"
-              prompt="Manual packet"
-              options={@ticket_options}
-            />
-            <.input
-              field={@packet_form[:app_id]}
-              type="select"
-              label="App"
-              prompt="Choose app"
-              options={@app_options}
-            />
-            <.input
-              field={@packet_form[:state]}
-              type="select"
-              label="State"
-              options={Factory.options(Factory.packet_states())}
-              value="draft"
-            />
-            <.input field={@packet_form[:objective]} type="textarea" label="Objective" rows="3" />
-            <.input
-              field={@packet_form[:context_inputs]}
-              type="textarea"
-              label="Context inputs"
-              rows="3"
-            />
-            <.input field={@packet_form[:constraints]} type="textarea" label="Constraints" rows="3" />
-            <.input
-              field={@packet_form[:expected_output]}
-              type="textarea"
-              label="Expected output"
-              rows="3"
-            />
-            <.input
-              field={@packet_form[:verification_plan]}
-              type="textarea"
-              label="Verification plan"
-              rows="3"
-            />
-            <.input
-              field={@packet_form[:required_evidence]}
-              type="textarea"
-              label="Required evidence"
-              rows="3"
-            />
-            <.input
-              field={@packet_form[:risk_level]}
-              type="select"
-              label="Risk"
-              options={Factory.options(Factory.risk_levels())}
-              value="normal"
-            />
-            <.input field={@packet_form[:review_route]} label="Review route" />
-            <div class="flex items-end">
-              <.button type="submit" variant="primary">
-                <.icon name="hero-document-plus" class="size-4" /> Save packet
-              </.button>
-            </div>
-          </.form>
-        </.panel>
-
-        <.panel title="Recent Harness Handoffs">
-          <:subtitle>
-            Copy a packet into Codex or another executor, then mark it launched when work begins.
-          </:subtitle>
-          <div :if={@harness_packets == []}>
-            <.empty_state message="No harness packets yet." />
-          </div>
-          <div class="grid gap-4 lg:grid-cols-2">
-            <article
-              :for={packet <- @harness_packets}
-              class="rounded border border-slate-200 p-3 dark:border-slate-800"
-            >
-              <div class="mb-2 flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="truncate text-sm font-semibold">{packet.objective}</div>
-                  <div class="text-xs text-slate-500">
-                    {packet.app.name} · {packet.state} · {packet.risk_level}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  phx-click="launch_packet"
-                  phx-value-packet-id={packet.id}
-                  class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                >
-                  Launch
-                </button>
-              </div>
-              <textarea
-                id={"handoff-#{packet.id}"}
-                readonly
-                rows="14"
-                class="w-full rounded border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
-              ><%= Work.handoff_text(packet) %></textarea>
-            </article>
-          </div>
-        </.panel>
+        </div>
       </div>
     </Layouts.app>
     """

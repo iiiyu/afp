@@ -299,122 +299,81 @@ defmodule AfpWeb.AppLive.Show do
     ~H"""
     <Layouts.app flash={@flash}>
       <div class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <.page_header
+          eyebrow="App cockpit"
+          title={@app.name}
+          subtitle={@app.next_action || "No next action is defined for this app."}
+        >
+          <:meta>
+            <.status_badge status={@app.lifecycle_stage} />
+            <.status_badge status={@app.business_posture} />
+            <.status_badge status={@app.health_state} />
+            <span class="truncate text-xs text-slate-500">
+              {@app.repo_path || "No repository path"}
+            </span>
+            <span class="text-xs text-slate-500">
+              Last activity {format_datetime(@app.last_activity_at)}
+            </span>
+          </:meta>
+          <:actions>
             <.link
               navigate={@return_to}
-              class="mb-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              class="inline-flex items-center gap-1 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
             >
               <.icon name="hero-arrow-left" class="size-4" /> Apps
             </.link>
-            <h1 class="text-2xl font-semibold">{@app.name}</h1>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <.status_badge status={@app.lifecycle_stage} />
-              <.status_badge status={@app.business_posture} />
-              <.status_badge status={@app.health_state} />
-            </div>
-          </div>
-          <div class="text-right text-xs text-slate-500">
-            <div>{@app.repo_path || "No repository path"}</div>
-            <div>Last activity {format_datetime(@app.last_activity_at)}</div>
-          </div>
-        </div>
+            <button
+              type="button"
+              phx-click="scan_repository"
+              class="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+            >
+              <.icon name="hero-arrow-path" class="size-4" /> Scan repo
+            </button>
+          </:actions>
+        </.page_header>
 
-        <div class="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)_420px]">
-          <aside class="space-y-4">
-            <.panel title="Identity">
-              <.form for={@app_form} id="app-edit-form" phx-submit="update_app" class="space-y-2">
-                <.input field={@app_form[:name]} label="Name" />
-                <.input field={@app_form[:repo_path]} label="Repository path" />
-                <.input field={@app_form[:platforms]} label="Platforms" />
-                <.input field={@app_form[:current_version]} label="Current version" />
-                <.input field={@app_form[:current_build]} label="Current build" />
-                <.input
-                  field={@app_form[:product_thesis]}
-                  type="textarea"
-                  label="Product thesis"
-                  rows="4"
-                />
-                <.button type="submit">Save</.button>
-              </.form>
-            </.panel>
-
-            <.panel title="State Transitions">
-              <.form
-                for={@lifecycle_form}
-                id="lifecycle-form"
-                phx-submit="transition_lifecycle"
-                class="space-y-2"
-              >
-                <.input
-                  field={@lifecycle_form[:lifecycle_stage]}
-                  type="select"
-                  label="Lifecycle"
-                  options={Factory.options(Factory.lifecycle_stages())}
-                />
-                <.input field={@lifecycle_form[:note]} label="Decision note" required />
-                <.input
-                  field={@lifecycle_form[:evidence_summary]}
-                  type="textarea"
-                  label="Evidence summary"
-                  rows="3"
-                />
-                <.button type="submit">Update lifecycle</.button>
-              </.form>
-              <div class="my-4 border-t border-slate-100 dark:border-slate-800" />
-              <.form
-                for={@posture_form}
-                id="posture-form"
-                phx-submit="transition_posture"
-                class="space-y-2"
-              >
-                <.input
-                  field={@posture_form[:business_posture]}
-                  type="select"
-                  label="Business posture"
-                  options={Factory.options(Factory.business_postures())}
-                />
-                <.input field={@posture_form[:note]} label="Decision note" required />
-                <.input
-                  field={@posture_form[:evidence_summary]}
-                  type="textarea"
-                  label="Evidence summary"
-                  rows="3"
-                />
-                <.button type="submit">Update posture</.button>
-              </.form>
-            </.panel>
-          </aside>
-
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <main class="space-y-4">
-            <.panel title="Next Action">
-              <.form
-                for={@next_action_form}
-                id="next-action-form"
-                phx-submit="save_next_action"
-                class="space-y-2"
-              >
-                <.input
-                  field={@next_action_form[:next_action]}
-                  type="textarea"
-                  label="Next action"
-                  rows="3"
-                />
-                <div class="flex flex-wrap gap-2">
-                  <.button type="submit" variant="primary">Save next action</.button>
-                  <button
-                    type="button"
-                    phx-click="create_ticket_from_next_action"
-                    class="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                  >
-                    <.icon name="hero-ticket" class="size-4" /> Ticket from next action
-                  </button>
-                </div>
-              </.form>
-            </.panel>
+            <.panel title="Immediate Execution">
+              <:subtitle>
+                Next action, active work, and blockers.
+              </:subtitle>
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <.panel title="Active Tickets">
+              <.disclosure
+                title="Next Action"
+                subtitle="Current command for this app."
+                open
+              >
+                <.form
+                  for={@next_action_form}
+                  id="next-action-form"
+                  phx-submit="save_next_action"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@next_action_form[:next_action]}
+                    type="textarea"
+                    label="Next action"
+                    rows="3"
+                  />
+                  <div class="flex flex-wrap gap-2">
+                    <.button type="submit" variant="primary">Save next action</.button>
+                    <button
+                      type="button"
+                      phx-click="create_ticket_from_next_action"
+                      class="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    >
+                      <.icon name="hero-ticket" class="size-4" /> Ticket from next action
+                    </button>
+                  </div>
+                </.form>
+              </.disclosure>
+
+              <.disclosure
+                title="Active Tickets"
+                subtitle={"#{length(active_tickets(@app))} tickets still need movement"}
+                open={active_tickets(@app) != []}
+              >
                 <div :if={active_tickets(@app) == []}>
                   <.empty_state message="No active tickets." />
                 </div>
@@ -431,45 +390,67 @@ defmodule AfpWeb.AppLive.Show do
                     <span>{ticket.risk_level}</span>
                   </div>
                 </div>
-              </.panel>
+              </.disclosure>
 
-              <.panel title="Active Sessions">
-                <div :if={active_sessions(@app) == []}>
-                  <.empty_state message="No active or stopped sessions." />
+              <.disclosure
+                title="Blockers"
+                subtitle="Blocked tickets and blocked release state."
+                open={
+                  @blocked_tickets != [] or
+                    (@current_release != nil and @current_release.status == "blocked")
+                }
+              >
+                <div :if={
+                  @blocked_tickets == [] and
+                    (@current_release == nil or @current_release.status != "blocked")
+                }>
+                  <.empty_state message="No app blockers recorded." />
                 </div>
                 <div
-                  :for={session <- active_sessions(@app)}
-                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                  :for={ticket <- @blocked_tickets}
+                  class="mb-2 rounded border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950"
                 >
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="font-medium">{session.external_session_id}</div>
-                    <.status_badge status={session.status} />
-                  </div>
-                  <div class="truncate text-xs text-slate-500">{session.cwd}</div>
+                  <div class="font-medium">{ticket.title}</div>
+                  <div class="text-xs text-red-700 dark:text-red-200">{ticket.blocked_reason}</div>
                 </div>
-              </.panel>
-            </div>
-
-            <.panel title="Current Release">
-              <div :if={!@current_release}>
-                <.empty_state message="No active release target." />
-              </div>
-              <div
-                :if={@current_release}
-                class="rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
-              >
-                <div class="flex items-center justify-between">
-                  <div class="font-medium">
-                    {@current_release.platform} · {@current_release.version || @current_release.label}
-                  </div>
-                  <.status_badge status={@current_release.status} />
-                </div>
-                <div class="mt-1 text-xs text-slate-500">{@current_release.build || "No build"}</div>
-              </div>
+              </.disclosure>
             </.panel>
 
-            <div class="grid gap-4 lg:grid-cols-3">
-              <.panel title="Repository Snapshot">
+            <.panel title="Operational Context">
+              <:subtitle>
+                Release, repository, and Codex session state.
+              </:subtitle>
+
+              <.disclosure
+                title="Current Release"
+                subtitle="Active release target and readiness state."
+                open={@current_release != nil}
+              >
+                <div :if={!@current_release}>
+                  <.empty_state message="No active release target." />
+                </div>
+                <div
+                  :if={@current_release}
+                  class="rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="font-medium">
+                      {@current_release.platform} · {@current_release.version ||
+                        @current_release.label}
+                    </div>
+                    <.status_badge status={@current_release.status} />
+                  </div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    {@current_release.build || "No build"}
+                  </div>
+                </div>
+              </.disclosure>
+
+              <.disclosure
+                title="Repository Snapshot"
+                subtitle="Latest local git scan for the app repository."
+                open={@latest_repo_scan != nil and @latest_repo_scan.status != "healthy"}
+              >
                 <div :if={!@latest_repo_scan}>
                   <.empty_state message="No repository scan yet." />
                 </div>
@@ -493,9 +474,55 @@ defmodule AfpWeb.AppLive.Show do
                 >
                   Scan repository
                 </button>
-              </.panel>
+              </.disclosure>
 
-              <.panel title="Growth Experiments">
+              <.disclosure
+                title="Active Sessions"
+                subtitle="Codex sessions linked to this app."
+                open={active_sessions(@app) != []}
+              >
+                <div :if={active_sessions(@app) == []}>
+                  <.empty_state message="No active or stopped sessions." />
+                </div>
+                <div
+                  :for={session <- active_sessions(@app)}
+                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-medium">{session.external_session_id}</div>
+                    <.status_badge status={session.status} />
+                  </div>
+                  <div class="truncate text-xs text-slate-500">{session.cwd}</div>
+                </div>
+              </.disclosure>
+            </.panel>
+
+            <.panel title="Business And Maintenance Loops">
+              <:subtitle>
+                Metrics, growth experiments, and maintenance obligations.
+              </:subtitle>
+
+              <.disclosure
+                title="Latest Metrics"
+                subtitle="Most recent business snapshot."
+                open={@latest_metrics != nil}
+              >
+                <div :if={@latest_metrics} class="grid grid-cols-2 gap-2 text-sm">
+                  <div>Snapshot: {format_date(@latest_metrics.snapshot_date)}</div>
+                  <div>Revenue: {@latest_metrics.revenue || "blank"}</div>
+                  <div>Downloads: {@latest_metrics.downloads || "blank"}</div>
+                  <div>Rating: {@latest_metrics.rating || "blank"}</div>
+                </div>
+                <div :if={!@latest_metrics}>
+                  <.empty_state message="No metrics snapshot yet." />
+                </div>
+              </.disclosure>
+
+              <.disclosure
+                title="Growth Experiments"
+                subtitle={"#{length(active_experiments(@app))} active experiments"}
+                open={active_experiments(@app) != []}
+              >
                 <div :if={active_experiments(@app) == []}>
                   <.empty_state message="No active growth experiments." />
                 </div>
@@ -539,9 +566,13 @@ defmodule AfpWeb.AppLive.Show do
                     <.button type="submit">Update</.button>
                   </.form>
                 </div>
-              </.panel>
+              </.disclosure>
 
-              <.panel title="Maintenance">
+              <.disclosure
+                title="Maintenance"
+                subtitle={"#{length(open_maintenance(@app))} open obligations"}
+                open={open_maintenance(@app) != []}
+              >
                 <div :if={open_maintenance(@app) == []}>
                   <.empty_state message="No open maintenance obligations." />
                 </div>
@@ -584,225 +615,277 @@ defmodule AfpWeb.AppLive.Show do
                     <.button type="submit">Update</.button>
                   </.form>
                 </div>
-              </.panel>
-            </div>
-
-            <.panel title="Blockers">
-              <div :if={
-                @blocked_tickets == [] and
-                  (@current_release == nil or @current_release.status != "blocked")
-              }>
-                <.empty_state message="No app blockers recorded." />
-              </div>
-              <div
-                :for={ticket <- @blocked_tickets}
-                class="mb-2 rounded border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950"
-              >
-                <div class="font-medium">{ticket.title}</div>
-                <div class="text-xs text-red-700 dark:text-red-200">{ticket.blocked_reason}</div>
-              </div>
+              </.disclosure>
             </.panel>
           </main>
 
-          <aside class="space-y-4">
-            <.panel title="Create Ticket">
-              <.form
-                for={@ticket_form}
-                id="app-ticket-form"
-                phx-submit="create_ticket"
-                class="space-y-2"
-              >
-                <.input field={@ticket_form[:title]} label="Title" />
-                <.input
-                  field={@ticket_form[:description]}
-                  type="textarea"
-                  label="Description"
-                  rows="3"
-                />
-                <.input
-                  field={@ticket_form[:status]}
-                  type="select"
-                  label="Status"
-                  options={Factory.options(Factory.ticket_statuses())}
-                />
-                <.input
-                  field={@ticket_form[:risk_level]}
-                  type="select"
-                  label="Risk"
-                  options={Factory.options(Factory.risk_levels())}
-                />
-                <.button type="submit">Create ticket</.button>
-              </.form>
-            </.panel>
+          <aside>
+            <.panel title="App Actions">
+              <.disclosure title="Identity" subtitle="Edit durable app identity and product thesis.">
+                <.form for={@app_form} id="app-edit-form" phx-submit="update_app" class="space-y-2">
+                  <.input field={@app_form[:name]} label="Name" />
+                  <.input field={@app_form[:repo_path]} label="Repository path" />
+                  <.input field={@app_form[:platforms]} label="Platforms" />
+                  <.input field={@app_form[:current_version]} label="Current version" />
+                  <.input field={@app_form[:current_build]} label="Current build" />
+                  <.input
+                    field={@app_form[:product_thesis]}
+                    type="textarea"
+                    label="Product thesis"
+                    rows="4"
+                  />
+                  <.button type="submit">Save</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Create Harness Packet">
-              <.form
-                for={@packet_form}
-                id="app-packet-form"
-                phx-submit="create_packet"
-                class="space-y-2"
+              <.disclosure
+                title="State Transitions"
+                subtitle="Manual lifecycle and business posture decisions."
               >
-                <.input
-                  field={@packet_form[:ticket_id]}
-                  type="select"
-                  label="Ticket"
-                  prompt="Optional"
-                  options={Enum.map(active_tickets(@app), &{&1.title, &1.id})}
-                />
-                <.input field={@packet_form[:objective]} type="textarea" label="Objective" rows="3" />
-                <.input
-                  field={@packet_form[:expected_output]}
-                  type="textarea"
-                  label="Expected output"
-                  rows="2"
-                />
-                <.input
-                  field={@packet_form[:verification_plan]}
-                  type="textarea"
-                  label="Verification plan"
-                  rows="2"
-                />
-                <.input field={@packet_form[:review_route]} label="Review route" />
-                <.input
-                  field={@packet_form[:risk_level]}
-                  type="select"
-                  label="Risk"
-                  options={Factory.options(Factory.risk_levels())}
-                />
-                <.button type="submit">Save packet</.button>
-              </.form>
-            </.panel>
+                <.form
+                  for={@lifecycle_form}
+                  id="lifecycle-form"
+                  phx-submit="transition_lifecycle"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@lifecycle_form[:lifecycle_stage]}
+                    type="select"
+                    label="Lifecycle"
+                    options={Factory.options(Factory.lifecycle_stages())}
+                  />
+                  <.input field={@lifecycle_form[:note]} label="Decision note" required />
+                  <.input
+                    field={@lifecycle_form[:evidence_summary]}
+                    type="textarea"
+                    label="Evidence summary"
+                    rows="3"
+                  />
+                  <.button type="submit">Update lifecycle</.button>
+                </.form>
+                <div class="my-4 border-t border-slate-100 dark:border-slate-800" />
+                <.form
+                  for={@posture_form}
+                  id="posture-form"
+                  phx-submit="transition_posture"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@posture_form[:business_posture]}
+                    type="select"
+                    label="Business posture"
+                    options={Factory.options(Factory.business_postures())}
+                  />
+                  <.input field={@posture_form[:note]} label="Decision note" required />
+                  <.input
+                    field={@posture_form[:evidence_summary]}
+                    type="textarea"
+                    label="Evidence summary"
+                    rows="3"
+                  />
+                  <.button type="submit">Update posture</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Add Release Target">
-              <.form
-                for={@release_form}
-                id="app-release-form"
-                phx-submit="create_release"
-                class="space-y-2"
-              >
-                <.input field={@release_form[:platform]} label="Platform" />
-                <.input field={@release_form[:version]} label="Version" />
-                <.input field={@release_form[:build]} label="Build" />
-                <.input field={@release_form[:label]} label="Label" />
-                <.button type="submit">Create release</.button>
-              </.form>
-            </.panel>
+              <.disclosure title="Create Ticket" subtitle="Add a work item to the board." open>
+                <.form
+                  for={@ticket_form}
+                  id="app-ticket-form"
+                  phx-submit="create_ticket"
+                  class="space-y-2"
+                >
+                  <.input field={@ticket_form[:title]} label="Title" />
+                  <.input
+                    field={@ticket_form[:description]}
+                    type="textarea"
+                    label="Description"
+                    rows="3"
+                  />
+                  <.input
+                    field={@ticket_form[:status]}
+                    type="select"
+                    label="Status"
+                    options={Factory.options(Factory.ticket_statuses())}
+                  />
+                  <.input
+                    field={@ticket_form[:risk_level]}
+                    type="select"
+                    label="Risk"
+                    options={Factory.options(Factory.risk_levels())}
+                  />
+                  <.button type="submit">Create ticket</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Add Evidence">
-              <.form
-                for={@evidence_form}
-                id="app-evidence-form"
-                phx-submit="create_evidence"
-                class="space-y-2"
+              <.disclosure
+                title="Create Harness Packet"
+                subtitle="Prepare bounded work for Codex or another executor."
               >
-                <.input
-                  field={@evidence_form[:type]}
-                  type="select"
-                  label="Type"
-                  options={Factory.options(Factory.evidence_types())}
-                />
-                <.input field={@evidence_form[:summary]} type="textarea" label="Summary" rows="3" />
-                <.input field={@evidence_form[:source_path]} label="Source path" />
-                <.input field={@evidence_form[:source_url]} label="Source URL" />
-                <.input
-                  field={@evidence_form[:reliability]}
-                  type="select"
-                  label="Reliability"
-                  options={Factory.options(Factory.reliabilities())}
-                />
-                <.button type="submit">Attach evidence</.button>
-              </.form>
-            </.panel>
+                <.form
+                  for={@packet_form}
+                  id="app-packet-form"
+                  phx-submit="create_packet"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@packet_form[:ticket_id]}
+                    type="select"
+                    label="Ticket"
+                    prompt="Optional"
+                    options={Enum.map(active_tickets(@app), &{&1.title, &1.id})}
+                  />
+                  <.input field={@packet_form[:objective]} type="textarea" label="Objective" rows="3" />
+                  <.input
+                    field={@packet_form[:expected_output]}
+                    type="textarea"
+                    label="Expected output"
+                    rows="2"
+                  />
+                  <.input
+                    field={@packet_form[:verification_plan]}
+                    type="textarea"
+                    label="Verification plan"
+                    rows="2"
+                  />
+                  <.input field={@packet_form[:review_route]} label="Review route" />
+                  <.input
+                    field={@packet_form[:risk_level]}
+                    type="select"
+                    label="Risk"
+                    options={Factory.options(Factory.risk_levels())}
+                  />
+                  <.button type="submit">Save packet</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Latest Metrics">
-              <div :if={@latest_metrics} class="mb-3 grid grid-cols-2 gap-2 text-sm">
-                <div>Snapshot: {format_date(@latest_metrics.snapshot_date)}</div>
-                <div>Revenue: {@latest_metrics.revenue || "blank"}</div>
-                <div>Downloads: {@latest_metrics.downloads || "blank"}</div>
-                <div>Rating: {@latest_metrics.rating || "blank"}</div>
-              </div>
-              <.form
-                for={@metrics_form}
-                id="app-metrics-form"
-                phx-submit="create_metrics"
-                class="space-y-2"
-              >
-                <.input field={@metrics_form[:snapshot_date]} type="date" label="Snapshot date" />
-                <.input field={@metrics_form[:downloads]} type="number" label="Downloads" />
-                <.input field={@metrics_form[:revenue]} type="number" step="0.01" label="Revenue" />
-                <.input field={@metrics_form[:rating]} type="number" step="0.1" label="Rating" />
-                <.input field={@metrics_form[:notes]} type="textarea" label="Notes" rows="3" />
-                <.button type="submit">Save metrics</.button>
-              </.form>
-            </.panel>
+              <.disclosure title="Add Release Target" subtitle="Start a release readiness track.">
+                <.form
+                  for={@release_form}
+                  id="app-release-form"
+                  phx-submit="create_release"
+                  class="space-y-2"
+                >
+                  <.input field={@release_form[:platform]} label="Platform" />
+                  <.input field={@release_form[:version]} label="Version" />
+                  <.input field={@release_form[:build]} label="Build" />
+                  <.input field={@release_form[:label]} label="Label" />
+                  <.button type="submit">Create release</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Add Growth Experiment">
-              <.form
-                for={@experiment_form}
-                id="app-growth-form"
-                phx-submit="create_experiment"
-                class="space-y-2"
-              >
-                <.input field={@experiment_form[:title]} label="Title" />
-                <.input
-                  field={@experiment_form[:hypothesis]}
-                  type="textarea"
-                  label="Hypothesis"
-                  rows="3"
-                />
-                <.input field={@experiment_form[:metric]} label="Metric" />
-                <.input
-                  field={@experiment_form[:status]}
-                  type="select"
-                  label="Status"
-                  options={Factory.options(Factory.experiment_statuses())}
-                />
-                <.input
-                  field={@experiment_form[:priority]}
-                  type="select"
-                  label="Priority"
-                  options={Factory.options(Factory.priorities())}
-                />
-                <.input field={@experiment_form[:review_due_on]} type="date" label="Review due" />
-                <.button type="submit">Create experiment</.button>
-              </.form>
-            </.panel>
+              <.disclosure title="Add Evidence" subtitle="Attach proof directly to this app.">
+                <.form
+                  for={@evidence_form}
+                  id="app-evidence-form"
+                  phx-submit="create_evidence"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@evidence_form[:type]}
+                    type="select"
+                    label="Type"
+                    options={Factory.options(Factory.evidence_types())}
+                  />
+                  <.input field={@evidence_form[:summary]} type="textarea" label="Summary" rows="3" />
+                  <.input field={@evidence_form[:source_path]} label="Source path" />
+                  <.input field={@evidence_form[:source_url]} label="Source URL" />
+                  <.input
+                    field={@evidence_form[:reliability]}
+                    type="select"
+                    label="Reliability"
+                    options={Factory.options(Factory.reliabilities())}
+                  />
+                  <.button type="submit">Attach evidence</.button>
+                </.form>
+              </.disclosure>
 
-            <.panel title="Add Maintenance Obligation">
-              <.form
-                for={@maintenance_form}
-                id="app-maintenance-form"
-                phx-submit="create_maintenance"
-                class="space-y-2"
+              <.disclosure title="Record Metrics" subtitle="Capture a compact business snapshot.">
+                <.form
+                  for={@metrics_form}
+                  id="app-metrics-form"
+                  phx-submit="create_metrics"
+                  class="space-y-2"
+                >
+                  <.input field={@metrics_form[:snapshot_date]} type="date" label="Snapshot date" />
+                  <.input field={@metrics_form[:downloads]} type="number" label="Downloads" />
+                  <.input field={@metrics_form[:revenue]} type="number" step="0.01" label="Revenue" />
+                  <.input field={@metrics_form[:rating]} type="number" step="0.1" label="Rating" />
+                  <.input field={@metrics_form[:notes]} type="textarea" label="Notes" rows="3" />
+                  <.button type="submit">Save metrics</.button>
+                </.form>
+              </.disclosure>
+
+              <.disclosure title="Add Growth Experiment" subtitle="Create a measurable growth loop.">
+                <.form
+                  for={@experiment_form}
+                  id="app-growth-form"
+                  phx-submit="create_experiment"
+                  class="space-y-2"
+                >
+                  <.input field={@experiment_form[:title]} label="Title" />
+                  <.input
+                    field={@experiment_form[:hypothesis]}
+                    type="textarea"
+                    label="Hypothesis"
+                    rows="3"
+                  />
+                  <.input field={@experiment_form[:metric]} label="Metric" />
+                  <.input
+                    field={@experiment_form[:status]}
+                    type="select"
+                    label="Status"
+                    options={Factory.options(Factory.experiment_statuses())}
+                  />
+                  <.input
+                    field={@experiment_form[:priority]}
+                    type="select"
+                    label="Priority"
+                    options={Factory.options(Factory.priorities())}
+                  />
+                  <.input field={@experiment_form[:review_due_on]} type="date" label="Review due" />
+                  <.button type="submit">Create experiment</.button>
+                </.form>
+              </.disclosure>
+
+              <.disclosure
+                title="Add Maintenance Obligation"
+                subtitle="Track operational work owed by this app."
               >
-                <.input field={@maintenance_form[:title]} label="Title" />
-                <.input
-                  field={@maintenance_form[:category]}
-                  type="select"
-                  label="Category"
-                  options={Factory.options(Factory.maintenance_categories())}
-                />
-                <.input
-                  field={@maintenance_form[:status]}
-                  type="select"
-                  label="Status"
-                  options={Factory.options(Factory.maintenance_statuses())}
-                />
-                <.input
-                  field={@maintenance_form[:priority]}
-                  type="select"
-                  label="Priority"
-                  options={Factory.options(Factory.priorities())}
-                />
-                <.input field={@maintenance_form[:due_on]} type="date" label="Due on" />
-                <.input
-                  field={@maintenance_form[:notes]}
-                  type="textarea"
-                  label="Notes"
-                  rows="3"
-                />
-                <.button type="submit">Create obligation</.button>
-              </.form>
+                <.form
+                  for={@maintenance_form}
+                  id="app-maintenance-form"
+                  phx-submit="create_maintenance"
+                  class="space-y-2"
+                >
+                  <.input field={@maintenance_form[:title]} label="Title" />
+                  <.input
+                    field={@maintenance_form[:category]}
+                    type="select"
+                    label="Category"
+                    options={Factory.options(Factory.maintenance_categories())}
+                  />
+                  <.input
+                    field={@maintenance_form[:status]}
+                    type="select"
+                    label="Status"
+                    options={Factory.options(Factory.maintenance_statuses())}
+                  />
+                  <.input
+                    field={@maintenance_form[:priority]}
+                    type="select"
+                    label="Priority"
+                    options={Factory.options(Factory.priorities())}
+                  />
+                  <.input field={@maintenance_form[:due_on]} type="date" label="Due on" />
+                  <.input
+                    field={@maintenance_form[:notes]}
+                    type="textarea"
+                    label="Notes"
+                    rows="3"
+                  />
+                  <.button type="submit">Create obligation</.button>
+                </.form>
+              </.disclosure>
             </.panel>
           </aside>
         </div>

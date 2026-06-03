@@ -4,7 +4,46 @@
 defmodule AfpWeb.FactoryComponents do
   use Phoenix.Component
 
+  import AfpWeb.CoreComponents, only: [icon: 1]
+
   alias Afp.Factory
+
+  attr :eyebrow, :string, default: nil
+  attr :title, :string, required: true
+  attr :subtitle, :string, default: nil
+  attr :class, :any, default: nil
+  slot :meta
+  slot :actions
+
+  def page_header(assigns) do
+    ~H"""
+    <header class={[
+      "rounded border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900",
+      @class
+    ]}>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="min-w-0">
+          <div
+            :if={@eyebrow}
+            class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+          >
+            {@eyebrow}
+          </div>
+          <h1 class="mt-1 text-xl font-semibold text-slate-950 dark:text-white">{@title}</h1>
+          <p :if={@subtitle} class="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+            {@subtitle}
+          </p>
+          <div :if={@meta != []} class="mt-3 flex flex-wrap items-center gap-2">
+            {render_slot(@meta)}
+          </div>
+        </div>
+        <div :if={@actions != []} class="flex shrink-0 flex-wrap items-center gap-2">
+          {render_slot(@actions)}
+        </div>
+      </div>
+    </header>
+    """
+  end
 
   attr :title, :string, required: true
   attr :class, :any, default: nil
@@ -29,6 +68,92 @@ defmodule AfpWeb.FactoryComponents do
       </header>
       <div class="p-4">{render_slot(@inner_block)}</div>
     </section>
+    """
+  end
+
+  attr :title, :string, required: true
+  attr :subtitle, :string, default: nil
+  attr :open, :boolean, default: false
+  attr :class, :any, default: nil
+  slot :actions
+  slot :inner_block, required: true
+
+  def disclosure(assigns) do
+    ~H"""
+    <details
+      open={@open}
+      class={[
+        "group border-t border-slate-200 py-3 first:border-t-0 dark:border-slate-800",
+        @class
+      ]}
+    >
+      <summary class="flex cursor-pointer list-none items-start justify-between gap-4">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-slate-950 dark:text-white">{@title}</h3>
+          <p :if={@subtitle} class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {@subtitle}
+          </p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <div :if={@actions != []}>{render_slot(@actions)}</div>
+          <span class="rounded border border-slate-200 p-1 text-slate-500 group-open:hidden dark:border-slate-700">
+            <.icon name="hero-chevron-down" class="size-3" />
+          </span>
+          <span class="hidden rounded border border-slate-200 p-1 text-slate-500 group-open:inline dark:border-slate-700">
+            <.icon name="hero-chevron-up" class="size-3" />
+          </span>
+        </div>
+      </summary>
+      <div class="mt-3">
+        {render_slot(@inner_block)}
+      </div>
+    </details>
+    """
+  end
+
+  attr :title, :string, required: true
+  attr :value, :any, required: true
+  attr :status, :string, default: nil
+  attr :hint, :string, default: nil
+  attr :navigate, :string, default: nil
+
+  def summary_item(assigns) do
+    ~H"""
+    <.link
+      :if={@navigate}
+      navigate={@navigate}
+      class="block rounded border border-slate-200 bg-white px-3 py-2 text-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+    >
+      <.summary_item_content title={@title} value={@value} status={@status} hint={@hint} />
+    </.link>
+    <div
+      :if={!@navigate}
+      class="rounded border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+    >
+      <.summary_item_content title={@title} value={@value} status={@status} hint={@hint} />
+    </div>
+    """
+  end
+
+  attr :title, :string, required: true
+  attr :value, :any, required: true
+  attr :status, :string, default: nil
+  attr :hint, :string, default: nil
+
+  defp summary_item_content(assigns) do
+    ~H"""
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          {@title}
+        </div>
+        <div class="mt-1 truncate font-semibold text-slate-950 dark:text-white">{@value}</div>
+        <div :if={@hint} class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+          {@hint}
+        </div>
+      </div>
+      <.status_badge :if={@status} status={@status} />
+    </div>
     """
   end
 
