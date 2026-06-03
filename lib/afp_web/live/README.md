@@ -14,7 +14,7 @@ factory event log broadcasts updates.
 - `today_live.ex` - Today command center with focus queues and quick ticket creation.
 - `app_live/index.ex` - App portfolio table, filters, and app creation.
 - `app_live/show.ex` - App detail cockpit with lifecycle, tickets, sessions, releases, evidence, and metrics entry points.
-- `board_live.ex` - Ticket board and harness packet builder.
+- `board_live.ex` - Draggable ticket board and harness packet builder.
 - `sessions_live.ex` - Codex session inbox, linking, ignore, and review workflows.
 - `releases_live.ex` - Release targets, checklist gates, transitions, and checklist evidence.
 - `evidence_live.ex` - Evidence packet creation, listing, and optional subject linking.

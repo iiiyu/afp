@@ -34,25 +34,11 @@ defmodule AfpWeb.BoardLive do
   end
 
   def handle_event("move_ticket", %{"ticket_id" => ticket_id, "ticket" => params}, socket) do
-    ticket = Work.get_ticket!(ticket_id)
+    move_ticket(socket, ticket_id, params["status"], params)
+  end
 
-    case Work.transition_ticket(ticket, params["status"], params) do
-      {:ok, _ticket} ->
-        {:noreply,
-         socket |> put_flash(:info, "Ticket moved.") |> load_board(socket.assigns.filters)}
-
-      {:error, :blocked_reason_required} ->
-        {:noreply, put_flash(socket, :error, "Blocked tickets require a blocked reason.")}
-
-      {:error, :review_or_evidence_required} ->
-        {:noreply, put_flash(socket, :error, "Done requires a review note or linked evidence.")}
-
-      {:error, :note_required} ->
-        {:noreply, put_flash(socket, :error, "This transition requires a note.")}
-
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Ticket transition is not allowed.")}
-    end
+  def handle_event("drop_ticket", %{"ticket_id" => ticket_id, "status" => status}, socket) do
+    move_ticket(socket, ticket_id, status, %{})
   end
 
   def handle_event("create_packet", %{"packet" => packet_params}, socket) do
@@ -118,6 +104,32 @@ defmodule AfpWeb.BoardLive do
   defp apply_posture_filter(tickets, posture),
     do: Enum.filter(tickets, &(&1.app && &1.app.business_posture == posture))
 
+  defp move_ticket(socket, ticket_id, target_status, attrs) do
+    ticket = Work.get_ticket!(ticket_id)
+
+    if ticket.status == target_status do
+      {:noreply, socket}
+    else
+      case Work.transition_ticket(ticket, target_status, attrs) do
+        {:ok, _ticket} ->
+          {:noreply,
+           socket |> put_flash(:info, "Ticket moved.") |> load_board(socket.assigns.filters)}
+
+        {:error, :blocked_reason_required} ->
+          {:noreply, put_flash(socket, :error, "Blocked tickets require a blocked reason.")}
+
+        {:error, :review_or_evidence_required} ->
+          {:noreply, put_flash(socket, :error, "Done requires a review note or linked evidence.")}
+
+        {:error, :note_required} ->
+          {:noreply, put_flash(socket, :error, "This transition requires a note.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "Ticket transition is not allowed.")}
+      end
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -162,9 +174,15 @@ defmodule AfpWeb.BoardLive do
             </.button>
           </.form>
 
-          <div class="grid min-h-[560px] gap-3 overflow-x-auto xl:grid-cols-7">
+          <div
+            id="ticket-board"
+            phx-hook="TicketBoardDrag"
+            class="grid min-h-[560px] gap-3 overflow-x-auto xl:grid-cols-7"
+          >
             <section
               :for={status <- Factory.ticket_statuses()}
+              id={"ticket-column-#{status}"}
+              data-ticket-drop-status={status}
               class="min-w-64 rounded border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950"
             >
               <header class="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-800">
@@ -173,7 +191,11 @@ defmodule AfpWeb.BoardLive do
                   {length(Map.get(@grouped_tickets, status, []))}
                 </span>
               </header>
-              <div class="space-y-2 p-2">
+              <div
+                id={"ticket-column-body-#{status}"}
+                data-ticket-drop-status={status}
+                class="space-y-2 p-2 transition-colors"
+              >
                 <div
                   :if={Map.get(@grouped_tickets, status, []) == []}
                   class="rounded border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500 dark:border-slate-700"
@@ -182,7 +204,12 @@ defmodule AfpWeb.BoardLive do
                 </div>
                 <article
                   :for={ticket <- Map.get(@grouped_tickets, status, [])}
-                  class="rounded border border-slate-200 bg-white p-3 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                  id={"ticket-card-#{ticket.id}"}
+                  data-ticket-card
+                  data-ticket-id={ticket.id}
+                  data-ticket-status={ticket.status}
+                  draggable="true"
+                  class="cursor-grab rounded border border-slate-200 bg-white p-3 text-sm shadow-sm transition hover:border-slate-300 active:cursor-grabbing dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
                 >
                   <div class="flex items-start justify-between gap-2">
                     <div class="font-medium">{ticket.title}</div>

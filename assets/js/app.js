@@ -45,11 +45,116 @@ window.addEventListener("storage", event => {
 
 window.addEventListener("phx:set-theme", event => setTheme(event.target.dataset.phxTheme))
 
+const TicketBoardDrag = {
+  mounted() {
+    this.draggedTicket = null
+    this.activeDropTarget = null
+
+    this.onDragStart = event => {
+      const card = event.target.closest("[data-ticket-card]")
+      if (!card || !this.el.contains(card)) return
+
+      if (event.target.closest("input, textarea, select, button, a")) {
+        event.preventDefault()
+        return
+      }
+
+      this.draggedTicket = {
+        id: card.dataset.ticketId,
+        status: card.dataset.ticketStatus,
+      }
+
+      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.setData("text/plain", this.draggedTicket.id)
+      card.classList.add("opacity-60", "ring-2", "ring-sky-400")
+    }
+
+    this.onDragOver = event => {
+      if (!this.draggedTicket) return
+
+      const target = this.dropTargetFor(event)
+      if (!target) return
+
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "move"
+      this.markDropTarget(target)
+    }
+
+    this.onDrop = event => {
+      if (!this.draggedTicket) return
+
+      const target = this.dropTargetFor(event)
+      if (!target) return
+
+      event.preventDefault()
+      const status = target.dataset.ticketDropStatus
+      const ticket = this.draggedTicket
+      this.clearDragState()
+
+      if (ticket.status === status) return
+
+      this.pushEvent("drop_ticket", {ticket_id: ticket.id, status})
+    }
+
+    this.onDragEnd = _event => this.clearDragState()
+
+    this.el.addEventListener("dragstart", this.onDragStart)
+    this.el.addEventListener("dragover", this.onDragOver)
+    this.el.addEventListener("drop", this.onDrop)
+    this.el.addEventListener("dragend", this.onDragEnd)
+  },
+
+  destroyed() {
+    this.el.removeEventListener("dragstart", this.onDragStart)
+    this.el.removeEventListener("dragover", this.onDragOver)
+    this.el.removeEventListener("drop", this.onDrop)
+    this.el.removeEventListener("dragend", this.onDragEnd)
+  },
+
+  updated() {
+    this.clearDragState()
+  },
+
+  dropTargetFor(event) {
+    const target = event.target.closest("[data-ticket-drop-status]")
+    return target && this.el.contains(target) ? target : null
+  },
+
+  markDropTarget(target) {
+    if (this.activeDropTarget === target) return
+
+    this.clearDropTarget()
+    this.activeDropTarget = target
+    target.classList.add("bg-sky-50", "ring-2", "ring-sky-300", "dark:bg-sky-950/40")
+  },
+
+  clearDropTarget() {
+    if (!this.activeDropTarget) return
+
+    this.activeDropTarget.classList.remove(
+      "bg-sky-50",
+      "ring-2",
+      "ring-sky-300",
+      "dark:bg-sky-950/40"
+    )
+    this.activeDropTarget = null
+  },
+
+  clearDragState() {
+    this.el
+      .querySelectorAll("[data-ticket-card]")
+      .forEach(card => card.classList.remove("opacity-60", "ring-2", "ring-sky-400"))
+
+    this.clearDropTarget()
+    this.draggedTicket = null
+  },
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, TicketBoardDrag},
 })
 
 // Show progress bar on live navigation and form submits

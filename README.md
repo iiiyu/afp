@@ -199,8 +199,8 @@ for the Phase 2 scope and verification contract.
   stale metrics, and quick ticket creation.
 - **Apps**: lifecycle/posture/health filters, portfolio table, app creation, and
   app detail cockpit.
-- **Board**: manual ticket workflow, lifecycle gate filters, review notes, and
-  evidence-aware done/blocked transitions.
+- **Board**: draggable ticket workflow, lifecycle gate filters, review notes,
+  and evidence-aware done/blocked transitions.
 - **Sessions**: Codex hook/session inbox, app matching, linking, review, ignore,
   and ticket creation from a session.
 - **Releases**: release targets, checklist gates, evidence attachment, and
