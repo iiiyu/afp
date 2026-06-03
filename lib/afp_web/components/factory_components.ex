@@ -92,6 +92,8 @@ defmodule AfpWeb.FactoryComponents do
               "blocked",
               "failed",
               "repo_missing",
+              "not_git",
+              "error",
               "needs_next_action",
               "release_blocked"
             ] do
@@ -99,7 +101,19 @@ defmodule AfpWeb.FactoryComponents do
   end
 
   defp badge_class(status)
-       when status in ["review", "stopped", "waiting", "submitted", "waived", "metrics_stale"] do
+       when status in [
+              "review",
+              "stopped",
+              "waiting",
+              "submitted",
+              "waived",
+              "metrics_stale",
+              "repo_dirty",
+              "dirty",
+              "maintenance_due",
+              "due",
+              "growth_review"
+            ] do
     "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
   end
 

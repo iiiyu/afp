@@ -6,6 +6,7 @@ defmodule Afp.Factory.Sessions do
 
   alias Afp.Factory
   alias Afp.Factory.Events
+  alias Afp.Factory.Evidence
   alias Afp.Factory.Portfolio
   alias Afp.Factory.Sessions.CodexSession
   alias Afp.Factory.Sessions.HookEvent
@@ -131,13 +132,15 @@ defmodule Afp.Factory.Sessions do
   def review_session(%CodexSession{} = session, attrs) do
     decision = Map.get(attrs, "decision") || Map.get(attrs, :decision)
     note = Map.get(attrs, "review_note") || Map.get(attrs, :review_note)
+    evidence_summary = Map.get(attrs, "evidence_summary") || Map.get(attrs, :evidence_summary)
     evidence_count = Afp.Factory.Evidence.count_links("codex_session", session.id)
 
     cond do
       decision not in ~w(pass needs_work blocked reject) ->
         {:error, :invalid_review_decision}
 
-      decision == "pass" and Factory.blank?(note) and evidence_count == 0 ->
+      decision == "pass" and Factory.blank?(note) and Factory.blank?(evidence_summary) and
+          evidence_count == 0 ->
         {:error, :review_or_evidence_required}
 
       decision == "blocked" and
@@ -156,6 +159,7 @@ defmodule Afp.Factory.Sessions do
             |> Repo.update!()
             |> Repo.preload(:tickets)
 
+          maybe_create_review_evidence(session, attrs)
           route_reviewed_tickets(session.tickets, decision, attrs)
 
           Events.record_event("codex_session", session.id, "session_reviewed", %{
@@ -263,6 +267,45 @@ defmodule Afp.Factory.Sessions do
         "review_note" => Map.get(attrs, "review_note") || Map.get(attrs, :review_note)
       })
     end)
+  end
+
+  defp maybe_create_review_evidence(session, attrs) do
+    summary = Map.get(attrs, "evidence_summary") || Map.get(attrs, :evidence_summary)
+
+    first_ticket = List.first(session.tickets)
+    app_id = session.app_id || (first_ticket && first_ticket.app_id)
+
+    if Factory.present?(summary) and app_id != nil do
+      {:ok, packet, _links} =
+        Evidence.create_evidence_packet(
+          %{
+            "app_id" => app_id,
+            "type" => "review_note",
+            "title" => "Codex review evidence: #{session.external_session_id}",
+            "summary" => summary,
+            "source_path" => session.transcript_path,
+            "reliability" => "medium"
+          },
+          [
+            %{
+              "subject_type" => "codex_session",
+              "subject_id" => session.id,
+              "link_reason" => "Session review evidence"
+            }
+            | Enum.map(session.tickets, fn ticket ->
+                %{
+                  "subject_type" => "ticket",
+                  "subject_id" => ticket.id,
+                  "link_reason" => "Evidence captured during session review"
+                }
+              end)
+          ]
+        )
+
+      packet
+    else
+      nil
+    end
   end
 
   defp extract_hook_attrs(attrs) do

@@ -11,10 +11,14 @@ defmodule Afp.Factory do
   @check_statuses ~w(pending passed failed waived not_applicable)
   @risk_levels ~w(low normal high critical)
   @priorities ~w(low normal high urgent)
-  @health_states ~w(unknown healthy needs_next_action repo_missing blocked release_blocked review metrics_stale archived)
+  @health_states ~w(unknown healthy needs_next_action repo_missing repo_dirty blocked release_blocked review metrics_stale maintenance_due growth_review archived)
   @evidence_types ~w(manual file_path url command_log summary screenshot metadata_diff validation_note review_note)
   @reliabilities ~w(unknown low medium high verified)
   @intake_modes ~w(neither http jsonl both)
+  @repo_scan_statuses ~w(unknown healthy dirty missing not_git error)
+  @experiment_statuses ~w(idea ready running review won lost paused dropped)
+  @maintenance_statuses ~w(open due blocked done dropped)
+  @maintenance_categories ~w(maintenance compliance release support dependency privacy analytics)
 
   def lifecycle_stages, do: @lifecycle_stages
   def business_postures, do: @business_postures
@@ -29,6 +33,10 @@ defmodule Afp.Factory do
   def evidence_types, do: @evidence_types
   def reliabilities, do: @reliabilities
   def intake_modes, do: @intake_modes
+  def repo_scan_statuses, do: @repo_scan_statuses
+  def experiment_statuses, do: @experiment_statuses
+  def maintenance_statuses, do: @maintenance_statuses
+  def maintenance_categories, do: @maintenance_categories
 
   def options(values), do: Enum.map(values, &{labelize(&1), &1})
 

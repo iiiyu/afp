@@ -6,6 +6,7 @@ defmodule Afp.Factory.Portfolio do
 
   alias Afp.Factory
   alias Afp.Factory.Events
+  alias Afp.Factory.Evidence
   alias Afp.Factory.Portfolio.App
   alias Afp.Repo
 
@@ -80,6 +81,10 @@ defmodule Afp.Factory.Portfolio do
   end
 
   def transition_lifecycle(%App{} = app, lifecycle_stage, note) do
+    transition_lifecycle(app, lifecycle_stage, note, %{})
+  end
+
+  def transition_lifecycle(%App{} = app, lifecycle_stage, note, attrs) do
     cond do
       lifecycle_stage not in Factory.lifecycle_stages() ->
         {:error, :invalid_lifecycle_stage}
@@ -88,11 +93,13 @@ defmodule Afp.Factory.Portfolio do
         {:error, :note_required}
 
       true ->
-        attrs =
+        update_attrs =
           %{"lifecycle_stage" => lifecycle_stage, "last_activity_at" => Factory.now()}
           |> maybe_pause_or_archive(lifecycle_stage, note)
 
-        with {:ok, app} <- update_app(app, attrs) do
+        with {:ok, app} <- update_app(app, update_attrs) do
+          maybe_create_decision_evidence(app, "lifecycle", note, attrs)
+
           Events.record_event("app", app.id, "lifecycle_transitioned", %{
             to: lifecycle_stage,
             note: note
@@ -104,6 +111,10 @@ defmodule Afp.Factory.Portfolio do
   end
 
   def transition_business_posture(%App{} = app, business_posture, note) do
+    transition_business_posture(app, business_posture, note, %{})
+  end
+
+  def transition_business_posture(%App{} = app, business_posture, note, attrs) do
     cond do
       business_posture not in Factory.business_postures() ->
         {:error, :invalid_business_posture}
@@ -113,12 +124,38 @@ defmodule Afp.Factory.Portfolio do
 
       true ->
         with {:ok, app} <- update_app(app, %{"business_posture" => business_posture}) do
+          maybe_create_decision_evidence(app, "business_posture", note, attrs)
+
           Events.record_event("app", app.id, "business_posture_changed", %{
             to: business_posture,
             note: note
           })
 
           {:ok, app}
+        end
+    end
+  end
+
+  def set_health_state(%App{} = app, health_state, note \\ nil) do
+    cond do
+      health_state not in Factory.health_states() ->
+        {:error, :invalid_health_state}
+
+      true ->
+        app
+        |> Ecto.Changeset.change(%{health_state: health_state, last_activity_at: Factory.now()})
+        |> Repo.update()
+        |> case do
+          {:ok, app} ->
+            Events.record_event("app", app.id, "health_state_changed", %{
+              to: health_state,
+              note: note
+            })
+
+            {:ok, app}
+
+          result ->
+            result
         end
     end
   end
@@ -162,6 +199,16 @@ defmodule Afp.Factory.Portfolio do
       metrics_snapshots:
         from(snapshot in Afp.Factory.Metrics.MetricsSnapshot,
           order_by: [desc: snapshot.snapshot_date]
+        ),
+      repo_scans:
+        from(scan in Afp.Factory.Repositories.RepoScan, order_by: [desc: scan.scanned_at]),
+      growth_experiments:
+        from(experiment in Afp.Factory.Growth.GrowthExperiment,
+          order_by: [asc_nulls_last: experiment.review_due_on, desc: experiment.updated_at]
+        ),
+      maintenance_obligations:
+        from(obligation in Afp.Factory.Maintenance.MaintenanceObligation,
+          order_by: [asc_nulls_last: obligation.due_on, desc: obligation.updated_at]
         )
     )
   end
@@ -184,6 +231,35 @@ defmodule Afp.Factory.Portfolio do
     do: Map.put(attrs, "archived_at", Factory.now())
 
   defp maybe_pause_or_archive(attrs, _stage, _note), do: attrs
+
+  defp maybe_create_decision_evidence(app, decision_type, note, attrs) do
+    summary = Map.get(attrs, "evidence_summary") || Map.get(attrs, :evidence_summary)
+
+    if Factory.present?(summary) do
+      {:ok, packet, _links} =
+        Evidence.create_evidence_packet(
+          %{
+            "app_id" => app.id,
+            "type" => "review_note",
+            "title" => "#{Factory.labelize(decision_type)} decision evidence",
+            "summary" => summary,
+            "reliability" => "medium",
+            "payload" => %{"decision_note" => note}
+          },
+          [
+            %{
+              "subject_type" => "app",
+              "subject_id" => app.id,
+              "link_reason" => "#{Factory.labelize(decision_type)} transition evidence"
+            }
+          ]
+        )
+
+      packet
+    else
+      nil
+    end
+  end
 
   defp maybe_exclude_archived(query, params) do
     if truthy?(filter_value(params, "include_archived")) do

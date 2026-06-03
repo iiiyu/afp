@@ -23,3 +23,6 @@ so LiveViews remain thin and older API/UI paths keep consistent behavior.
 - `factory/metrics.ex` and `factory/metrics/metrics_snapshot.ex` - Manual business metrics snapshots and stale-live-app flags.
 - `factory/settings.ex`, `factory/settings/setting.ex`, and `factory/settings/import_jsonl_spool_worker.ex` - Repository roots, Codex intake settings, JSONL spool import, and Oban worker.
 - `factory/dashboard.ex` - Today command-center read model.
+- `factory/repositories.ex` and `factory/repositories/repo_scan.ex` - Local repository scanning, app matching, git status, and health signals.
+- `factory/growth.ex` and `factory/growth/growth_experiment.ex` - Post-launch growth experiment tracking and review queues.
+- `factory/maintenance.ex` and `factory/maintenance/maintenance_obligation.ex` - Maintenance obligation tracking and due queues.

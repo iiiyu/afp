@@ -34,6 +34,9 @@ attach evidence, and decide whether an app or release is allowed to advance.
   manual transitions from draft to live.
 - Evidence and metrics: reusable evidence packets, many-object evidence links,
   manual business snapshots, and stale metric flags for live apps.
+- Dogfood operating loop: local repository scans, copyable harness handoffs,
+  review-time evidence capture, growth experiment reviews, and maintenance
+  obligations.
 
 ## App Lifecycle Management
 
@@ -108,10 +111,14 @@ flowchart LR
     UI --> Releases["Factory.Releases"]
     UI --> Evidence["Factory.Evidence"]
     UI --> Metrics["Factory.Metrics"]
+    UI --> Repositories["Factory.Repositories"]
+    UI --> Growth["Factory.Growth"]
+    UI --> Maintenance["Factory.Maintenance"]
     UI --> Settings["Factory.Settings"]
 
     Intake --> Sessions
     Settings --> Intake
+    Settings --> Repositories
 
     Dashboard --> Repo["Afp.Repo"]
     Portfolio --> Repo
@@ -120,6 +127,9 @@ flowchart LR
     Releases --> Repo
     Evidence --> Repo
     Metrics --> Repo
+    Repositories --> Repo
+    Growth --> Repo
+    Maintenance --> Repo
     Settings --> Repo
 
     Work --> Events["Factory.Events"]
@@ -128,6 +138,9 @@ flowchart LR
     Evidence --> Events
     Portfolio --> Events
     Metrics --> Events
+    Repositories --> Events
+    Growth --> Events
+    Maintenance --> Events
 
     Events --> PubSub["Phoenix PubSub"]
     PubSub --> UI
@@ -147,6 +160,9 @@ erDiagram
     apps ||--o{ release_targets : releases
     apps ||--o{ evidence_packets : collects
     apps ||--o{ metrics_snapshots : measures
+    apps ||--o{ repo_scans : observes
+    apps ||--o{ growth_experiments : tests
+    apps ||--o{ maintenance_obligations : owes
 
     tickets ||--o{ harness_packets : generates
     tickets ||--o{ ticket_session_links : links
@@ -159,6 +175,23 @@ erDiagram
 See [`docs/database_schema.md`](docs/database_schema.md) for table-level
 details. Hook events and settings are also persisted, but they are processing and
 configuration records rather than direct ownership edges in the core domain.
+
+## Phase 2 Dogfood Loop
+
+Phase 2 adds the daily operating loop needed for real dogfooding:
+
+- **Repository scanning** reads configured roots and app repo paths, records git
+  branch, dirty counts, latest commit, platform hints, and app health signals.
+- **Harness handoff** turns a packet into copyable execution text for Codex while
+  preserving the rule that AFP tickets only advance after manual review.
+- **Review evidence** can be captured directly while reviewing a stopped Codex
+  session, then linked back to the session and ticket.
+- **Lifecycle and posture evidence** can be recorded during app state decisions.
+- **Growth experiments** and **maintenance obligations** feed Today when review
+  or due dates need attention.
+
+See [`docs/phase-2-dogfood-operating-loop.md`](docs/phase-2-dogfood-operating-loop.md)
+for the Phase 2 scope and verification contract.
 
 ## Main Surfaces
 
@@ -176,7 +209,7 @@ configuration records rather than direct ownership edges in the core domain.
   releases, checklist items, and metrics.
 - **Metrics**: manual business snapshots and stale-live-app flags.
 - **Settings**: repository roots, Codex intake mode, transcript privacy defaults,
-  and JSONL spool offsets.
+  JSONL spool offsets, repository scans, and scan jobs.
 
 ## Running Locally
 

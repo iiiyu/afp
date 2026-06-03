@@ -189,11 +189,65 @@ defmodule Afp.Factory.Work do
     end
   end
 
+  def mark_harness_packet_launched(%HarnessPacket{} = packet) do
+    packet
+    |> HarnessPacket.changeset(%{"state" => "launched", "launch_mode" => "manual"})
+    |> Repo.update()
+    |> after_packet_write("harness_packet_launched")
+  end
+
   def update_harness_packet(%HarnessPacket{} = packet, attrs) do
     packet
     |> HarnessPacket.changeset(attrs)
     |> Repo.update()
     |> after_packet_write("harness_packet_updated")
+  end
+
+  def handoff_text(%HarnessPacket{} = packet) do
+    packet = Repo.preload(packet, [:app, :ticket, :release_target])
+
+    """
+    # Harness Packet
+
+    App: #{packet.app && packet.app.name}
+    Repository: #{packet.repository_path || (packet.app && packet.app.repo_path) || "not specified"}
+    Lifecycle gate: #{packet.lifecycle_gate || "not specified"}
+    Ticket: #{(packet.ticket && packet.ticket.title) || "none"}
+    Risk: #{packet.risk_level}
+    Review route: #{packet.review_route || "manual review in AFP"}
+
+    ## Objective
+    #{packet.objective}
+
+    ## Context Inputs
+    #{inspect(packet.context_inputs, pretty: true, limit: :infinity)}
+
+    ## Constraints
+    #{inspect(packet.constraints, pretty: true, limit: :infinity)}
+
+    ## Non-goals
+    #{inspect(packet.non_goals, pretty: true, limit: :infinity)}
+
+    ## Allowed Tools
+    #{inspect(packet.allowed_tools, pretty: true, limit: :infinity)}
+
+    ## Expected Output
+    #{packet.expected_output || "not specified"}
+
+    ## Verification Plan
+    #{inspect(packet.verification_plan, pretty: true, limit: :infinity)}
+
+    ## Required Evidence
+    #{inspect(packet.required_evidence, pretty: true, limit: :infinity)}
+
+    ## Approval Points
+    #{inspect(packet.approval_points, pretty: true, limit: :infinity)}
+
+    ## Completion Contract
+    Do not mark related AFP tickets done automatically. Report result summary,
+    evidence paths, tests run, and any next route for manual review.
+    """
+    |> String.trim()
   end
 
   defp done_allowed?(%Ticket{} = ticket, attrs) do

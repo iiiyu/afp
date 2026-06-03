@@ -15,6 +15,24 @@ defmodule Afp.FactoryFixtures do
     path
   end
 
+  def temp_git_repo_fixture(files \\ %{}) do
+    path = unique_repo_path()
+    {_output, 0} = System.cmd("git", ["init"], cd: path, stderr_to_stdout: true)
+    {_output, 0} = System.cmd("git", ["config", "user.email", "afp@example.test"], cd: path)
+    {_output, 0} = System.cmd("git", ["config", "user.name", "AFP Test"], cd: path)
+
+    files
+    |> Enum.each(fn {file, content} ->
+      full_path = Path.join(path, file)
+      File.mkdir_p!(Path.dirname(full_path))
+      File.write!(full_path, content)
+    end)
+
+    {_output, 0} = System.cmd("git", ["add", "."], cd: path, stderr_to_stdout: true)
+    {_output, 0} = System.cmd("git", ["commit", "-m", "Initial test commit"], cd: path)
+    path
+  end
+
   def app_fixture(attrs \\ %{}) do
     defaults = %{
       "name" => "Test App #{unique_integer()}",

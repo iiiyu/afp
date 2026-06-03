@@ -35,5 +35,8 @@ defmodule AfpWeb.ControlPlaneLiveTest do
     assert html =~ "State Transitions"
     assert html =~ "Active Tickets"
     assert html =~ "Active Sessions"
+    assert html =~ "Repository Snapshot"
+    assert html =~ "Growth Experiments"
+    assert html =~ "Maintenance"
   end
 end

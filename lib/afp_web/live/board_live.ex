@@ -78,6 +78,21 @@ defmodule AfpWeb.BoardLive do
     end
   end
 
+  def handle_event("launch_packet", %{"packet-id" => packet_id}, socket) do
+    packet = Work.get_harness_packet!(packet_id)
+
+    case Work.mark_harness_packet_launched(packet) do
+      {:ok, _packet} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Harness packet marked launched.")
+         |> load_board(socket.assigns.filters)}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Could not launch harness packet.")}
+    end
+  end
+
   @impl true
   def handle_info({:factory_event, _event}, socket) do
     {:noreply, load_board(socket, socket.assigns.filters)}
@@ -91,6 +106,7 @@ defmodule AfpWeb.BoardLive do
 
     socket
     |> assign(:tickets, tickets)
+    |> assign(:harness_packets, Work.list_harness_packets() |> Enum.take(6))
     |> assign(:grouped_tickets, Enum.group_by(tickets, & &1.status))
     |> assign(:app_options, Portfolio.list_app_options())
     |> assign(:ticket_options, Enum.map(tickets, &{&1.title, &1.id}))
@@ -286,6 +302,44 @@ defmodule AfpWeb.BoardLive do
               </.button>
             </div>
           </.form>
+        </.panel>
+
+        <.panel title="Recent Harness Handoffs">
+          <:subtitle>
+            Copy a packet into Codex or another executor, then mark it launched when work begins.
+          </:subtitle>
+          <div :if={@harness_packets == []}>
+            <.empty_state message="No harness packets yet." />
+          </div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <article
+              :for={packet <- @harness_packets}
+              class="rounded border border-slate-200 p-3 dark:border-slate-800"
+            >
+              <div class="mb-2 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold">{packet.objective}</div>
+                  <div class="text-xs text-slate-500">
+                    {packet.app.name} · {packet.state} · {packet.risk_level}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  phx-click="launch_packet"
+                  phx-value-packet-id={packet.id}
+                  class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Launch
+                </button>
+              </div>
+              <textarea
+                id={"handoff-#{packet.id}"}
+                readonly
+                rows="14"
+                class="w-full rounded border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              ><%= Work.handoff_text(packet) %></textarea>
+            </article>
+          </div>
         </.panel>
       </div>
     </Layouts.app>

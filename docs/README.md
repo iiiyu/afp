@@ -12,4 +12,5 @@ load only the detailed guidance relevant to the current task.
 - `agent_liveview_rules.md` - Agent LiveView guide: detailed LiveView, stream, test, JavaScript interop, and form rules referenced from `AGENTS.md`.
 - `agent_ui_rules.md` - Agent UI guide: detailed Tailwind, CSS, JavaScript bundle, and visual presentation rules referenced from `AGENTS.md`.
 - `database_schema.md` - Current PostgreSQL schema summary, core constraints, and controlled state fields.
+- `phase-2-dogfood-operating-loop.md` - Phase 2 operating loop scope, flow, non-goals, and verification contract.
 - `screenshots/` - README screenshots generated from the local Phoenix UI.

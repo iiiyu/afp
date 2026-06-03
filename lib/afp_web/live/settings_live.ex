@@ -6,6 +6,7 @@ defmodule AfpWeb.SettingsLive do
 
   alias Afp.Factory
   alias Afp.Factory.Events
+  alias Afp.Factory.Repositories
   alias Afp.Factory.Settings
 
   @impl true
@@ -77,6 +78,29 @@ defmodule AfpWeb.SettingsLive do
     end
   end
 
+  def handle_event("scan_roots", _params, socket) do
+    {:ok, result} =
+      Repositories.scan_repository_roots(Settings.repository_roots(), reason: "settings_scan")
+
+    {:noreply,
+     socket
+     |> put_flash(
+       :info,
+       "Scanned #{result.scanned} repos; #{result.attention} need attention."
+     )
+     |> load_settings()}
+  end
+
+  def handle_event("enqueue_root_scan", _params, socket) do
+    case Repositories.enqueue_repository_root_scan("settings_enqueue") do
+      {:ok, _job} ->
+        {:noreply, put_flash(socket, :info, "Repository scan job enqueued.")}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Could not enqueue repository scan.")}
+    end
+  end
+
   @impl true
   def handle_info({:factory_event, _event}, socket), do: {:noreply, load_settings(socket)}
 
@@ -85,6 +109,7 @@ defmodule AfpWeb.SettingsLive do
 
     socket
     |> assign(:repository_roots, Settings.repository_roots())
+    |> assign(:repo_scans, Repositories.list_repo_scans() |> Enum.take(12))
     |> assign(:intake, intake)
     |> assign(:intake_form, to_form(intake, as: :intake))
   end
@@ -135,6 +160,51 @@ defmodule AfpWeb.SettingsLive do
             >
               Remove
             </button>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+            <div>
+              <div class="text-sm font-medium">Repository scan</div>
+              <div class="text-xs text-slate-500">
+                Scans git status, branch, latest commit, and platform hints without changing repos.
+              </div>
+            </div>
+            <button
+              type="button"
+              phx-click="scan_roots"
+              class="rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white dark:border-slate-700 dark:hover:bg-slate-900"
+            >
+              Scan roots
+            </button>
+            <button
+              type="button"
+              phx-click="enqueue_root_scan"
+              class="rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white dark:border-slate-700 dark:hover:bg-slate-900"
+            >
+              Enqueue
+            </button>
+          </div>
+
+          <div class="mt-4">
+            <div class="mb-2 text-sm font-semibold">Recent scans</div>
+            <div :if={@repo_scans == []}>
+              <.empty_state message="No repository scans yet." />
+            </div>
+            <div
+              :for={scan <- @repo_scans}
+              class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate font-medium">{scan.name || scan.repository_path}</div>
+                  <div class="truncate text-xs text-slate-500">{scan.repository_path}</div>
+                </div>
+                <.status_badge status={scan.status} />
+              </div>
+              <div class="mt-2 text-xs text-slate-500">
+                {scan.branch || "no branch"} · {scan.changed_count} changed · {scan.untracked_count} untracked
+              </div>
+            </div>
           </div>
         </.panel>
 

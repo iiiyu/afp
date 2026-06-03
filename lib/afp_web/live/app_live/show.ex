@@ -7,8 +7,13 @@ defmodule AfpWeb.AppLive.Show do
   alias Afp.Factory
   alias Afp.Factory.Evidence
   alias Afp.Factory.Events
+  alias Afp.Factory.Growth
+  alias Afp.Factory.Growth.GrowthExperiment
+  alias Afp.Factory.Maintenance
+  alias Afp.Factory.Maintenance.MaintenanceObligation
   alias Afp.Factory.Metrics
   alias Afp.Factory.Portfolio
+  alias Afp.Factory.Repositories
   alias Afp.Factory.Releases
   alias Afp.Factory.Work
   alias Afp.Factory.Work.HarnessPacket
@@ -60,7 +65,8 @@ defmodule AfpWeb.AppLive.Show do
     case Portfolio.transition_lifecycle(
            socket.assigns.app,
            params["lifecycle_stage"],
-           params["note"]
+           params["note"],
+           params
          ) do
       {:ok, app} ->
         {:noreply,
@@ -80,7 +86,8 @@ defmodule AfpWeb.AppLive.Show do
     case Portfolio.transition_business_posture(
            socket.assigns.app,
            params["business_posture"],
-           params["note"]
+           params["note"],
+           params
          ) do
       {:ok, app} ->
         {:noreply,
@@ -164,6 +171,70 @@ defmodule AfpWeb.AppLive.Show do
     end
   end
 
+  def handle_event("scan_repository", _params, socket) do
+    case Repositories.scan_app(socket.assigns.app, "app_cockpit_scan") do
+      {:ok, scan} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Repository scanned: #{scan.status}.")
+         |> reload_app()}
+
+      {:error, :repo_path_missing} ->
+        {:noreply, put_flash(socket, :error, "App needs a repository path before scanning.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Repository scan failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("create_experiment", %{"experiment" => experiment_params}, socket) do
+    params = Map.put(experiment_params, "app_id", socket.assigns.app.id)
+
+    case Growth.create_experiment(params) do
+      {:ok, _experiment} ->
+        {:noreply, socket |> put_flash(:info, "Growth experiment created.") |> reload_app()}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :experiment_form, to_form(changeset))}
+    end
+  end
+
+  def handle_event("update_experiment", %{"_id" => id, "experiment" => params}, socket) do
+    experiment = Growth.get_experiment!(id)
+
+    case Growth.update_experiment(experiment, params) do
+      {:ok, _experiment} ->
+        {:noreply, socket |> put_flash(:info, "Growth experiment updated.") |> reload_app()}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Could not update growth experiment.")}
+    end
+  end
+
+  def handle_event("create_maintenance", %{"maintenance" => maintenance_params}, socket) do
+    params = Map.put(maintenance_params, "app_id", socket.assigns.app.id)
+
+    case Maintenance.create_obligation(params) do
+      {:ok, _obligation} ->
+        {:noreply, socket |> put_flash(:info, "Maintenance obligation created.") |> reload_app()}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :maintenance_form, to_form(changeset))}
+    end
+  end
+
+  def handle_event("update_maintenance", %{"_id" => id, "maintenance" => params}, socket) do
+    obligation = Maintenance.get_obligation!(id)
+
+    case Maintenance.update_obligation(obligation, params) do
+      {:ok, _obligation} ->
+        {:noreply, socket |> put_flash(:info, "Maintenance obligation updated.") |> reload_app()}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Could not update maintenance obligation.")}
+    end
+  end
+
   @impl true
   def handle_info({:factory_event, _event}, socket), do: {:noreply, reload_app(socket)}
 
@@ -179,6 +250,7 @@ defmodule AfpWeb.AppLive.Show do
     |> assign(:app, app)
     |> assign(:page_title, app.name)
     |> assign(:latest_metrics, latest_metrics)
+    |> assign(:latest_repo_scan, List.first(app.repo_scans))
     |> assign(:current_release, current_release)
     |> assign(:blocked_tickets, Enum.filter(app.tickets, &(&1.status == "blocked")))
     |> assign(:app_form, to_form(Portfolio.change_app(app)))
@@ -198,6 +270,16 @@ defmodule AfpWeb.AppLive.Show do
     |> assign(:release_form, to_form(%{}, as: :release))
     |> assign(:evidence_form, to_form(%{}, as: :evidence))
     |> assign(:metrics_form, to_form(%{"snapshot_date" => Date.utc_today()}, as: :metrics))
+    |> assign(
+      :experiment_form,
+      to_form(Growth.change_experiment(%GrowthExperiment{app_id: app.id, status: "idea"}))
+    )
+    |> assign(
+      :maintenance_form,
+      to_form(
+        Maintenance.change_obligation(%MaintenanceObligation{app_id: app.id, status: "open"})
+      )
+    )
   end
 
   defp active_tickets(app), do: Enum.reject(app.tickets, &(&1.status in ["done", "dropped"]))
@@ -205,6 +287,12 @@ defmodule AfpWeb.AppLive.Show do
   defp active_sessions(app),
     do:
       Enum.filter(app.codex_sessions, &(&1.status in ["linked", "running", "waiting", "stopped"]))
+
+  defp active_experiments(app),
+    do: Enum.reject(app.growth_experiments, &(&1.status in ["won", "lost", "dropped"]))
+
+  defp open_maintenance(app),
+    do: Enum.reject(app.maintenance_obligations, &(&1.status in ["done", "dropped"]))
 
   @impl true
   def render(assigns) do
@@ -265,6 +353,12 @@ defmodule AfpWeb.AppLive.Show do
                   options={Factory.options(Factory.lifecycle_stages())}
                 />
                 <.input field={@lifecycle_form[:note]} label="Decision note" required />
+                <.input
+                  field={@lifecycle_form[:evidence_summary]}
+                  type="textarea"
+                  label="Evidence summary"
+                  rows="3"
+                />
                 <.button type="submit">Update lifecycle</.button>
               </.form>
               <div class="my-4 border-t border-slate-100 dark:border-slate-800" />
@@ -281,6 +375,12 @@ defmodule AfpWeb.AppLive.Show do
                   options={Factory.options(Factory.business_postures())}
                 />
                 <.input field={@posture_form[:note]} label="Decision note" required />
+                <.input
+                  field={@posture_form[:evidence_summary]}
+                  type="textarea"
+                  label="Evidence summary"
+                  rows="3"
+                />
                 <.button type="submit">Update posture</.button>
               </.form>
             </.panel>
@@ -367,6 +467,125 @@ defmodule AfpWeb.AppLive.Show do
                 <div class="mt-1 text-xs text-slate-500">{@current_release.build || "No build"}</div>
               </div>
             </.panel>
+
+            <div class="grid gap-4 lg:grid-cols-3">
+              <.panel title="Repository Snapshot">
+                <div :if={!@latest_repo_scan}>
+                  <.empty_state message="No repository scan yet." />
+                </div>
+                <div :if={@latest_repo_scan} class="space-y-2 text-sm">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="font-medium">{@latest_repo_scan.branch || "No branch"}</div>
+                    <.status_badge status={@latest_repo_scan.status} />
+                  </div>
+                  <div class="text-slate-500">
+                    {@latest_repo_scan.changed_count} changed · {@latest_repo_scan.untracked_count} untracked
+                  </div>
+                  <div class="truncate text-xs text-slate-500">
+                    {@latest_repo_scan.latest_commit_sha || "No commit"} · {@latest_repo_scan.latest_commit_subject ||
+                      "No subject"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  phx-click="scan_repository"
+                  class="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Scan repository
+                </button>
+              </.panel>
+
+              <.panel title="Growth Experiments">
+                <div :if={active_experiments(@app) == []}>
+                  <.empty_state message="No active growth experiments." />
+                </div>
+                <div
+                  :for={experiment <- active_experiments(@app)}
+                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-medium">{experiment.title}</div>
+                    <.status_badge status={experiment.status} />
+                  </div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    {experiment.metric || "No metric"} · review {format_date(experiment.review_due_on)}
+                  </div>
+                  <.form
+                    for={
+                      to_form(
+                        %{"status" => experiment.status, "outcome_note" => experiment.outcome_note},
+                        as: :experiment
+                      )
+                    }
+                    id={"experiment-update-#{experiment.id}"}
+                    phx-submit="update_experiment"
+                    class="mt-2 grid gap-2"
+                  >
+                    <input type="hidden" name="_id" value={experiment.id} />
+                    <.input
+                      name="experiment[status]"
+                      id={"experiment-status-#{experiment.id}"}
+                      type="select"
+                      label="Status"
+                      value={experiment.status}
+                      options={Factory.options(Factory.experiment_statuses())}
+                    />
+                    <.input
+                      name="experiment[outcome_note]"
+                      id={"experiment-note-#{experiment.id}"}
+                      label="Outcome note"
+                      value={experiment.outcome_note}
+                    />
+                    <.button type="submit">Update</.button>
+                  </.form>
+                </div>
+              </.panel>
+
+              <.panel title="Maintenance">
+                <div :if={open_maintenance(@app) == []}>
+                  <.empty_state message="No open maintenance obligations." />
+                </div>
+                <div
+                  :for={obligation <- open_maintenance(@app)}
+                  class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="font-medium">{obligation.title}</div>
+                    <.status_badge status={obligation.status} />
+                  </div>
+                  <div class="mt-1 text-xs text-slate-500">
+                    {obligation.category} · due {format_date(obligation.due_on)}
+                  </div>
+                  <.form
+                    for={
+                      to_form(%{"status" => obligation.status, "notes" => obligation.notes},
+                        as: :maintenance
+                      )
+                    }
+                    id={"maintenance-update-#{obligation.id}"}
+                    phx-submit="update_maintenance"
+                    class="mt-2 grid gap-2"
+                  >
+                    <input type="hidden" name="_id" value={obligation.id} />
+                    <.input
+                      name="maintenance[status]"
+                      id={"maintenance-status-#{obligation.id}"}
+                      type="select"
+                      label="Status"
+                      value={obligation.status}
+                      options={Factory.options(Factory.maintenance_statuses())}
+                    />
+                    <.input
+                      name="maintenance[notes]"
+                      id={"maintenance-notes-#{obligation.id}"}
+                      label="Notes"
+                      value={obligation.notes}
+                    />
+                    <.button type="submit">Update</.button>
+                  </.form>
+                </div>
+              </.panel>
+            </div>
 
             <.panel title="Blockers">
               <div :if={
@@ -514,6 +733,75 @@ defmodule AfpWeb.AppLive.Show do
                 <.input field={@metrics_form[:rating]} type="number" step="0.1" label="Rating" />
                 <.input field={@metrics_form[:notes]} type="textarea" label="Notes" rows="3" />
                 <.button type="submit">Save metrics</.button>
+              </.form>
+            </.panel>
+
+            <.panel title="Add Growth Experiment">
+              <.form
+                for={@experiment_form}
+                id="app-growth-form"
+                phx-submit="create_experiment"
+                class="space-y-2"
+              >
+                <.input field={@experiment_form[:title]} label="Title" />
+                <.input
+                  field={@experiment_form[:hypothesis]}
+                  type="textarea"
+                  label="Hypothesis"
+                  rows="3"
+                />
+                <.input field={@experiment_form[:metric]} label="Metric" />
+                <.input
+                  field={@experiment_form[:status]}
+                  type="select"
+                  label="Status"
+                  options={Factory.options(Factory.experiment_statuses())}
+                />
+                <.input
+                  field={@experiment_form[:priority]}
+                  type="select"
+                  label="Priority"
+                  options={Factory.options(Factory.priorities())}
+                />
+                <.input field={@experiment_form[:review_due_on]} type="date" label="Review due" />
+                <.button type="submit">Create experiment</.button>
+              </.form>
+            </.panel>
+
+            <.panel title="Add Maintenance Obligation">
+              <.form
+                for={@maintenance_form}
+                id="app-maintenance-form"
+                phx-submit="create_maintenance"
+                class="space-y-2"
+              >
+                <.input field={@maintenance_form[:title]} label="Title" />
+                <.input
+                  field={@maintenance_form[:category]}
+                  type="select"
+                  label="Category"
+                  options={Factory.options(Factory.maintenance_categories())}
+                />
+                <.input
+                  field={@maintenance_form[:status]}
+                  type="select"
+                  label="Status"
+                  options={Factory.options(Factory.maintenance_statuses())}
+                />
+                <.input
+                  field={@maintenance_form[:priority]}
+                  type="select"
+                  label="Priority"
+                  options={Factory.options(Factory.priorities())}
+                />
+                <.input field={@maintenance_form[:due_on]} type="date" label="Due on" />
+                <.input
+                  field={@maintenance_form[:notes]}
+                  type="textarea"
+                  label="Notes"
+                  rows="3"
+                />
+                <.button type="submit">Create obligation</.button>
               </.form>
             </.panel>
           </aside>

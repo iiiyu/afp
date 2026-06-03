@@ -197,7 +197,7 @@ defmodule AfpWeb.SessionsLive do
                 for={to_form(%{}, as: :review)}
                 id={"review-session-#{session.id}"}
                 phx-submit="review_session"
-                class="mt-3 grid gap-2 md:grid-cols-4"
+                class="mt-3 grid gap-2 md:grid-cols-2"
               >
                 <input type="hidden" name="session_id" value={session.id} />
                 <.input
@@ -221,6 +221,13 @@ defmodule AfpWeb.SessionsLive do
                   name="review[blocked_reason]"
                   id={"blocked-reason-#{session.id}"}
                   label="Blocked reason"
+                />
+                <.input
+                  name="review[evidence_summary]"
+                  id={"evidence-summary-#{session.id}"}
+                  type="textarea"
+                  label="Evidence summary"
+                  rows="3"
                 />
                 <div class="flex items-end">
                   <button class="rounded border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-medium text-white dark:border-white dark:bg-white dark:text-slate-950">

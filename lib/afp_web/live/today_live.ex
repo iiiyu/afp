@@ -94,6 +94,21 @@ defmodule AfpWeb.TodayLive do
               value={length(@dashboard.active_apps)}
               hint="Unpaused portfolio"
             />
+            <.stat
+              title="Maintenance due"
+              value={length(@dashboard.due_maintenance)}
+              hint="Operational obligations"
+            />
+            <.stat
+              title="Growth reviews"
+              value={length(@dashboard.review_experiments)}
+              hint="Experiments due"
+            />
+            <.stat
+              title="Repo attention"
+              value={length(@dashboard.repo_attention_scans)}
+              hint="Dirty or missing repos"
+            />
           </div>
 
           <.panel title="Focus Queue">
@@ -113,11 +128,7 @@ defmodule AfpWeb.TodayLive do
                     <.status_badge :if={item[:app]} status={item.app.lifecycle_stage} />
                   </div>
                   <p class="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
-                    <%= if item[:app] do %>
-                      {item.app.name}: {item.app.next_action || "No next action"}
-                    <% else %>
-                      Codex session {item.session.external_session_id}
-                    <% end %>
+                    {item.detail}
                   </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
@@ -264,6 +275,52 @@ defmodule AfpWeb.TodayLive do
             >
               <div class="font-medium">{app.name}</div>
               <div class="text-slate-500">{app.business_posture}</div>
+            </div>
+          </.panel>
+
+          <.panel title="Maintenance Due">
+            <div :if={@dashboard.due_maintenance == []}>
+              <.empty_state message="No maintenance obligations are due." />
+            </div>
+            <div
+              :for={obligation <- @dashboard.due_maintenance}
+              class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+            >
+              <div class="font-medium">{obligation.title}</div>
+              <div class="text-slate-500">
+                {obligation.app.name} · {obligation.category} · {obligation.due_on}
+              </div>
+            </div>
+          </.panel>
+
+          <.panel title="Growth Reviews">
+            <div :if={@dashboard.review_experiments == []}>
+              <.empty_state message="No growth experiments need review." />
+            </div>
+            <div
+              :for={experiment <- @dashboard.review_experiments}
+              class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+            >
+              <div class="font-medium">{experiment.title}</div>
+              <div class="text-slate-500">
+                {experiment.app.name} · {experiment.metric || "No metric"} · {experiment.review_due_on}
+              </div>
+            </div>
+          </.panel>
+
+          <.panel title="Repository Attention">
+            <div :if={@dashboard.repo_attention_scans == []}>
+              <.empty_state message="No repository scan issues." />
+            </div>
+            <div
+              :for={scan <- @dashboard.repo_attention_scans}
+              class="mb-2 rounded border border-slate-200 p-3 text-sm dark:border-slate-800"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <div class="min-w-0 font-medium">{scan.name || scan.repository_path}</div>
+                <.status_badge status={scan.status} />
+              </div>
+              <div class="truncate text-slate-500">{scan.repository_path}</div>
             </div>
           </.panel>
         </aside>

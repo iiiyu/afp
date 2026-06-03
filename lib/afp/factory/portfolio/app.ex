@@ -29,6 +29,9 @@ defmodule Afp.Factory.Portfolio.App do
     has_many :evidence_packets, Afp.Factory.Evidence.EvidencePacket
     has_many :release_targets, Afp.Factory.Releases.ReleaseTarget
     has_many :metrics_snapshots, Afp.Factory.Metrics.MetricsSnapshot
+    has_many :repo_scans, Afp.Factory.Repositories.RepoScan
+    has_many :growth_experiments, Afp.Factory.Growth.GrowthExperiment
+    has_many :maintenance_obligations, Afp.Factory.Maintenance.MaintenanceObligation
 
     timestamps()
   end

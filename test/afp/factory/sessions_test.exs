@@ -74,4 +74,38 @@ defmodule Afp.Factory.SessionsTest do
 
     assert Work.get_ticket!(ticket.id).status == "review"
   end
+
+  test "reviewing a stopped session can create evidence and route linked ticket done" do
+    app = app_fixture()
+    ticket = ticket_fixture(app, %{"status" => "active"})
+    session_id = "sess-#{unique_integer()}"
+
+    {:ok, _hook_event, session} =
+      Sessions.receive_hook(%{
+        "session_id" => session_id,
+        "cwd" => app.repo_path,
+        "hook_event_name" => "start"
+      })
+
+    {:ok, linked_session} = Sessions.link_session(session, app.id, ticket.id, "Testing")
+
+    {:ok, _hook_event, stopped_session} =
+      Sessions.receive_hook(%{
+        "session_id" => session_id,
+        "cwd" => app.repo_path,
+        "hook_event_name" => "stop"
+      })
+
+    assert {:ok, reviewed_session} =
+             stopped_session
+             |> Sessions.review_session(%{
+               "decision" => "pass",
+               "evidence_summary" => "Tests passed and diff reviewed."
+             })
+
+    assert reviewed_session.id == linked_session.id
+    assert Work.get_ticket!(ticket.id).status == "done"
+    assert Afp.Factory.Evidence.count_links("codex_session", reviewed_session.id) == 1
+    assert Afp.Factory.Evidence.count_links("ticket", ticket.id) == 1
+  end
 end
