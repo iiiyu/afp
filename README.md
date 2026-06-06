@@ -27,6 +27,9 @@ attach evidence, and decide whether an app or release is allowed to advance.
   business posture, health state, current version/build, and next action.
 - Demand management: pre-app opportunities, source evidence, target user/job,
   validation action, bounded Codex launch requests, and promotion into apps.
+- Demand source repositories: external research repos that keep detailed scans,
+  evidence, candidate reports, product packages, prototype assets, and optional
+  repo-local SQLite data while AFP indexes and routes their state.
 - Execution flow: tickets, review states, blocked reasons, and harness packets
   that describe context, constraints, verification, required evidence, and
   routing.
@@ -201,12 +204,18 @@ Phase 2 adds the daily operating loop needed for real dogfooding:
 See [`docs/phase-2-dogfood-operating-loop.md`](docs/phase-2-dogfood-operating-loop.md)
 for the Phase 2 scope and verification contract.
 
+See [`docs/demand-repo-control-plane-design.md`](docs/demand-repo-control-plane-design.md)
+for the demand source repository contract, human-in-loop gates, scheduled and
+manual research flows, package handoff, and optional repo-local SQLite boundary.
+
 ## Main Surfaces
 
 - **Today**: focus queue as the primary command surface, with supporting review,
   demand, release, business, repository, and session queues grouped below it.
-- **Demand**: pre-app opportunity pipeline first, with launch requests and
-  promotion into apps kept in secondary action layers.
+- **Demand**: upstream demand-source console first, with configured research
+  repos, scheduled/manual research runs, candidate pickup, product packages,
+  launch requests, and promotion into apps kept as human-confirmed action
+  layers.
 - **Apps**: portfolio table as the primary read model, with filters and app
   creation separated into lower-level controls.
 - **Board**: draggable ticket board as the primary work surface, with harness
