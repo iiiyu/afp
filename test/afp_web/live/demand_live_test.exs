@@ -35,6 +35,34 @@ defmodule AfpWeb.DemandLiveTest do
     assert Enum.any?(Demand.list_candidates(), &(&1.source_repo.id == source_repo.id))
   end
 
+  test "shows legacy source detection for manifest-missing repos", %{conn: conn} do
+    path =
+      temp_git_repo_fixture(%{
+        "README.md" => "# AppIdeas\n",
+        "config/sources.md" => "",
+        "daily/.keep" => "",
+        "evidence/.keep" => "",
+        "reports/.keep" => "",
+        "memory/.keep" => "",
+        "templates/.keep" => ""
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#source-repo-form",
+        source_repo: %{
+          repo_path: path,
+          display_name: "Legacy AppIdeas"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Legacy adapter: Legacy AppIdeas"
+    assert hd(Demand.list_source_repos()).health_state == "manifest_missing"
+  end
+
   test "creates source repo, candidate, template, and candidate handoff", %{conn: conn} do
     path = demand_repo_fixture()
 

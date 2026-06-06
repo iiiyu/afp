@@ -39,6 +39,7 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `apps.repo_path` is unique when present, preventing duplicate repository-backed app records.
 - `demand_items.promoted_app_id` references the app created from validated demand when promotion occurs.
 - `demand_source_repos.repo_path` is unique, preventing duplicate source configuration.
+- `demand_source_repos.payload["legacy_adapter"]` can record detected AppIdeas/GameIdeas legacy layout evidence when a git source is missing the unified manifest; the source remains `manifest_missing` until operator adoption or repair.
 - `demand_candidates.demand_source_repo_id, lane, external_id` is unique, so AFP can re-index a repo-owned candidate without duplicating it.
 - `demand_candidates.demand_item_id` optionally links an indexed candidate to the AFP demand item created when the operator picks it up.
 - `demand_candidates.package_path` points back into the source repo; package verification requires the app-lane or game-lane package files before AFP marks the candidate `package_ready`.

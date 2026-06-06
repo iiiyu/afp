@@ -477,6 +477,11 @@ defmodule AfpWeb.DemandLive do
                       <p :if={source_repo.required_skills != []} class="mt-2 text-xs text-slate-500">
                         Required skills: {Enum.join(source_repo.required_skills, ", ")}
                       </p>
+                      <p :if={legacy_adapter(source_repo)} class="mt-2 text-xs text-slate-500">
+                        Legacy adapter: {legacy_adapter(source_repo)["label"]} · {legacy_adapter(
+                          source_repo
+                        )["confidence"]} confidence
+                      </p>
                     </div>
                     <.form
                       for={to_form(%{}, as: :source_refresh)}
@@ -1438,6 +1443,10 @@ defmodule AfpWeb.DemandLive do
     Enum.map(codex_sessions, fn session ->
       {session.external_session_id, session.id}
     end)
+  end
+
+  defp legacy_adapter(source_repo) do
+    get_in(source_repo.payload || %{}, ["legacy_adapter"])
   end
 
   defp demand_options(demand_items), do: Enum.map(demand_items, &{&1.title, &1.id})

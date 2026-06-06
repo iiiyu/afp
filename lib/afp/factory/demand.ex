@@ -905,13 +905,15 @@ defmodule Afp.Factory.Demand do
     case read_source_manifest(repo_path, manifest_path) do
       {:missing, manifest_full_path} ->
         health_state = if(git_repo?, do: "manifest_missing", else: "not_git")
+        legacy_attrs = legacy_layout_attrs(repo_path)
 
         Map.merge(base, %{
           "health_state" => health_state,
-          "health_summary" => source_health_summary(health_state),
+          "health_summary" => source_health_summary(health_state, legacy_attrs),
           "missing_paths" => [manifest_full_path],
           "parse_errors" => []
         })
+        |> Map.merge(legacy_attrs)
 
       {:error, reason} ->
         Map.merge(base, %{
@@ -1067,6 +1069,66 @@ defmodule Afp.Factory.Demand do
 
   defp source_health_summary("skills_unavailable"), do: "Required skills are unavailable."
   defp source_health_summary(_health_state), do: "Source health is unknown."
+
+  defp source_health_summary("manifest_missing", %{"payload" => %{"legacy_adapter" => legacy}}) do
+    "Manifest is missing; detected #{legacy["label"]} with #{legacy["confidence"]} confidence."
+  end
+
+  defp source_health_summary(health_state, _legacy_attrs), do: source_health_summary(health_state)
+
+  defp legacy_layout_attrs(repo_path) do
+    repo_path
+    |> detect_legacy_layouts()
+    |> case do
+      nil -> %{}
+      legacy -> %{"payload" => %{"legacy_adapter" => legacy}}
+    end
+  end
+
+  defp detect_legacy_layouts(repo_path) do
+    [
+      legacy_layout(
+        repo_path,
+        "legacy_app_ideas",
+        "Legacy AppIdeas",
+        ~w(README.md config daily evidence reports memory templates)
+      ),
+      legacy_layout(
+        repo_path,
+        "legacy_game_ideas",
+        "Legacy GameIdeas",
+        ~w(README.md AGENTS.md market ideas templates)
+      )
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort_by(& &1["matched_count"], :desc)
+    |> List.first()
+  end
+
+  defp legacy_layout(repo_path, kind, label, paths) do
+    matched_paths = Enum.filter(paths, &File.exists?(Path.join(repo_path, &1)))
+    matched_count = length(matched_paths)
+
+    if matched_count >= 3 do
+      %{
+        "kind" => kind,
+        "label" => label,
+        "confidence" => legacy_confidence(matched_count, length(paths)),
+        "matched_paths" => matched_paths,
+        "matched_count" => matched_count
+      }
+    end
+  end
+
+  defp legacy_confidence(matched_count, total_count) do
+    ratio = matched_count / total_count
+
+    cond do
+      ratio >= 0.75 -> "high"
+      ratio >= 0.5 -> "medium"
+      true -> "low"
+    end
+  end
 
   defp map_value(map, key) when is_map(map) do
     case Map.get(map, key) do

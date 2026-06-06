@@ -27,6 +27,26 @@ defmodule Afp.Factory.DemandTest do
     assert Enum.any?(source_repo.missing_paths, &String.ends_with?(&1, "demand.sqlite3"))
   end
 
+  test "create_source_repo detects legacy AppIdeas layout without adopting it" do
+    path =
+      temp_git_repo_fixture(%{
+        "README.md" => "# AppIdeas\n",
+        "config/sources.md" => "",
+        "daily/.keep" => "",
+        "evidence/.keep" => "",
+        "reports/.keep" => "",
+        "memory/.keep" => "",
+        "templates/.keep" => ""
+      })
+
+    {:ok, source_repo} = Demand.create_source_repo(%{"repo_path" => path})
+
+    assert source_repo.health_state == "manifest_missing"
+    assert source_repo.payload["legacy_adapter"]["kind"] == "legacy_app_ideas"
+    assert source_repo.payload["legacy_adapter"]["confidence"] == "high"
+    assert source_repo.health_summary =~ "Legacy AppIdeas"
+  end
+
   test "refresh_source_repo_index imports candidates from repo-local sqlite" do
     source_repo = demand_source_repo_fixture(%{"repo_path" => sqlite_demand_repo_fixture()})
 

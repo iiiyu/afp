@@ -30,7 +30,9 @@ attach evidence, and decide whether an app or release is allowed to advance.
 - Demand source repositories: external research repos that keep detailed scans,
   evidence, candidate reports, product packages, prototype assets, and required
   repo-local SQLite data while AFP indexes and routes their state through
-  manifest-declared read operations.
+  manifest-declared read operations. Manifest-missing legacy AppIdeas/GameIdeas
+  layouts are detected but remain blocked until the operator adopts or repairs
+  the source contract.
 - Execution flow: tickets, review states, blocked reasons, and harness packets
   that describe context, constraints, verification, required evidence, and
   routing.
