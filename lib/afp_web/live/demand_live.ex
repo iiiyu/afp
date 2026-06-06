@@ -21,6 +21,7 @@ defmodule AfpWeb.DemandLive do
      |> assign(:filters, params)
      |> assign(:filter_form, to_form(params, as: :filters))
      |> assign(:source_repo_form, to_form(Demand.change_source_repo(%SourceRepo{})))
+     |> assign(:source_repo_template_form, new_source_repo_template_form())
      |> assign(:candidate_form, to_form(Demand.change_candidate(%Candidate{})))
      |> assign(
        :message_template_form,
@@ -55,6 +56,31 @@ defmodule AfpWeb.DemandLive do
 
       {:error, changeset} ->
         {:noreply, assign(socket, :source_repo_form, to_form(changeset))}
+    end
+  end
+
+  def handle_event(
+        "create_source_repo_from_template",
+        %{"source_repo_template" => params},
+        socket
+      ) do
+    case Demand.create_source_repo_from_template(params) do
+      {:ok, _source_repo} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Standard demand source repo created.")
+         |> assign(:source_repo_template_form, new_source_repo_template_form())
+         |> load_demand(socket.assigns.filters)}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket, :source_repo_template_form, to_form(changeset, as: :source_repo_template))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, refresh_error(reason))
+         |> load_demand(socket.assigns.filters)}
     end
   end
 
@@ -934,6 +960,39 @@ defmodule AfpWeb.DemandLive do
               </.disclosure>
 
               <.disclosure
+                title="Create Standard Source Repo"
+                subtitle="Scaffold a unified app/game demand source repository."
+                open={@source_repos == []}
+              >
+                <.form
+                  for={@source_repo_template_form}
+                  id="source-repo-template-form"
+                  phx-submit="create_source_repo_from_template"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@source_repo_template_form[:repo_path]}
+                    label="Repository path"
+                    required
+                  />
+                  <.input field={@source_repo_template_form[:display_name]} label="Display name" />
+                  <.input
+                    field={@source_repo_template_form[:schedule_enabled]}
+                    type="checkbox"
+                    label="Enable scheduled scans"
+                  />
+                  <.input
+                    field={@source_repo_template_form[:schedule_interval_hours]}
+                    type="number"
+                    label="Interval hours"
+                  />
+                  <.button type="submit" variant="primary">
+                    <.icon name="hero-sparkles" class="size-4" /> Create source
+                  </.button>
+                </.form>
+              </.disclosure>
+
+              <.disclosure
                 title="Index Candidate"
                 subtitle="Add or update an AFP read-model row from repo-owned artifacts."
               >
@@ -1470,9 +1529,31 @@ defmodule AfpWeb.DemandLive do
 
   defp demand_options(demand_items), do: Enum.map(demand_items, &{&1.title, &1.id})
 
+  defp new_source_repo_template_form do
+    to_form(%{"schedule_enabled" => "false", "schedule_interval_hours" => "12"},
+      as: :source_repo_template
+    )
+  end
+
   defp refresh_error({:source_unhealthy, health_state}) do
     "Source is #{Factory.labelize(health_state)}; repair source health before indexing."
   end
+
+  defp refresh_error(:repo_path_required), do: "Repository path is required."
+  defp refresh_error(:target_path_not_directory), do: "Repository path points to a file."
+  defp refresh_error(:target_not_empty), do: "Repository path must be empty before scaffolding."
+
+  defp refresh_error({:target_unreadable, reason}),
+    do: "Repository path cannot be read: #{reason}."
+
+  defp refresh_error({:mkdir_failed, path, reason}), do: "Could not create #{path}: #{reason}."
+  defp refresh_error({:target_file_exists, path}), do: "Template file already exists: #{path}."
+  defp refresh_error({:write_failed, path, reason}), do: "Could not write #{path}: #{reason}."
+  defp refresh_error(:git_unavailable), do: "git is unavailable on this machine."
+  defp refresh_error({:git_init_failed, message}), do: "git init failed: #{message}"
+
+  defp refresh_error({:sqlite_schema_failed, message}),
+    do: "SQLite schema creation failed: #{message}"
 
   defp refresh_error(:read_operation_not_allowed) do
     "Manifest must allow read_index or read_candidates before AFP reads repo SQLite."

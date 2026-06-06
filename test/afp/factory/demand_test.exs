@@ -18,6 +18,40 @@ defmodule Afp.Factory.DemandTest do
     assert source_repo.sqlite_path == "demand.sqlite3"
   end
 
+  test "create_source_repo_from_template scaffolds and registers a healthy source" do
+    path = unique_repo_path()
+
+    assert {:ok, source_repo} =
+             Demand.create_source_repo_from_template(%{
+               "repo_path" => path,
+               "display_name" => "Standard Product Demand"
+             })
+
+    assert source_repo.health_state == "healthy"
+    assert source_repo.display_name == "Standard Product Demand"
+    assert source_repo.lanes == ["app", "game"]
+    assert "read_index" in source_repo.sqlite_allowed_operations
+    assert File.regular?(Path.join(path, "afp-demand-source.json"))
+    assert File.regular?(Path.join(path, "AGENTS.md"))
+    assert File.regular?(Path.join(path, "README.md"))
+    assert File.regular?(Path.join(path, "sqlite/schema.sql"))
+    assert File.regular?(Path.join(path, "demand.sqlite3"))
+    assert File.dir?(Path.join(path, ".git"))
+    assert File.read!(Path.join(path, "AGENTS.md")) =~ "proven demand"
+    assert File.read!(Path.join(path, "AGENTS.md")) =~ "IP safety"
+
+    assert {:ok, result} = Demand.refresh_source_repo_index(source_repo)
+    assert result.candidates == []
+  end
+
+  test "create_source_repo_from_template refuses non-empty paths" do
+    path = unique_repo_path()
+    File.write!(Path.join(path, "existing.md"), "# Existing\n")
+
+    assert {:error, :target_not_empty} =
+             Demand.create_source_repo_from_template(%{"repo_path" => path})
+  end
+
   test "create_source_repo marks required sqlite as missing" do
     path = demand_repo_fixture(%{"demand.sqlite3" => nil})
 

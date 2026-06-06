@@ -9,6 +9,30 @@ defmodule AfpWeb.DemandLiveTest do
   alias Afp.Factory.Demand
   alias Afp.Factory.Portfolio
 
+  test "creates a standard source repo from the demand action rail", %{conn: conn} do
+    path = unique_repo_path()
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#source-repo-template-form",
+        source_repo_template: %{
+          repo_path: path,
+          display_name: "Created Demand Source",
+          schedule_enabled: "false",
+          schedule_interval_hours: "12"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Standard demand source repo created."
+    assert html =~ "Created Demand Source"
+    assert File.regular?(Path.join(path, "AGENTS.md"))
+    assert File.regular?(Path.join(path, "demand.sqlite3"))
+    assert hd(Demand.list_source_repos()).health_state == "healthy"
+  end
+
   test "refreshes a source repo index from sqlite", %{conn: conn} do
     path = sqlite_demand_repo_fixture()
 

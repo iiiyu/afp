@@ -16,6 +16,7 @@ defmodule Afp.Factory.Demand do
   alias Afp.Factory.Demand.SentMessage
   alias Afp.Factory.Demand.SourceRepo
   alias Afp.Factory.Demand.SourceRepoAdapter
+  alias Afp.Factory.Demand.SourceRepoScaffold
   alias Afp.Factory.Events
   alias Afp.Factory.Portfolio
   alias Afp.Factory.Sessions.CodexSession
@@ -97,6 +98,12 @@ defmodule Afp.Factory.Demand do
     |> SourceRepo.changeset(attrs)
     |> Repo.insert()
     |> after_source_repo_write("demand_source_created")
+  end
+
+  def create_source_repo_from_template(attrs) do
+    with {:ok, scaffold_attrs} <- SourceRepoScaffold.create(attrs) do
+      create_source_repo(scaffold_attrs)
+    end
   end
 
   def update_source_repo(%SourceRepo{} = source_repo, attrs) do
