@@ -44,6 +44,7 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `demand_research_runs` can link to a source repo, candidate, message template, launch request, and Codex session while leaving detailed run artifacts in the source repo.
 - `demand_sent_messages` belong to a research run and can link to the launch request/session used to hand off or send the message.
 - `demand_message_templates.name` is unique.
+- Source repo index refresh reads the manifest-declared repo-local SQLite database only when `sqlite.allowed_operations` includes `read_index` or `read_candidates`; imported rows update `demand_candidates` and record a completed `repo_audit` research run.
 - `codex_launch_requests` can point at a demand item, app, ticket, release target, or generic source pair; launch state never implies task success.
 - `codex_sessions.external_session_id` is unique, so duplicate hook events update the same session rather than creating duplicate sessions.
 - `ticket_session_links.ticket_id, codex_session_id` is unique.

@@ -58,17 +58,20 @@ defmodule AfpWeb.DemandLive do
   def handle_event("refresh_source_repo", %{"source_repo_id" => source_repo_id}, socket) do
     source_repo = Demand.get_source_repo!(source_repo_id)
 
-    case Demand.refresh_source_repo(source_repo) do
-      {:ok, _source_repo} ->
+    case Demand.refresh_source_repo_index(source_repo) do
+      {:ok, result} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Demand source refreshed.")
+         |> put_flash(
+           :info,
+           "Demand source refreshed with #{length(result.candidates)} candidates."
+         )
          |> load_demand(socket.assigns.filters)}
 
-      {:error, changeset} ->
+      {:error, reason} ->
         {:noreply,
          socket
-         |> put_flash(:error, first_error(changeset) || "Could not refresh source.")
+         |> put_flash(:error, first_error(reason) || refresh_error(reason))
          |> load_demand(socket.assigns.filters)}
     end
   end
@@ -359,6 +362,10 @@ defmodule AfpWeb.DemandLive do
                             do: "#{source_repo.schedule_interval_hours}h",
                             else: "disabled"}
                         </div>
+                        <div>
+                          <span class="font-medium text-slate-900 dark:text-white">Indexed:</span>
+                          {format_datetime(source_repo.latest_index_at)}
+                        </div>
                       </div>
                       <p class="mt-2 text-sm text-slate-700 dark:text-slate-200">
                         {source_repo.health_summary || "No health summary yet."}
@@ -386,7 +393,7 @@ defmodule AfpWeb.DemandLive do
                     >
                       <input type="hidden" name="source_repo_id" value={source_repo.id} />
                       <button class="inline-flex items-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        <.icon name="hero-arrow-path" class="size-3" /> Refresh
+                        <.icon name="hero-arrow-path" class="size-3" /> Refresh index
                       </button>
                     </.form>
                   </div>
@@ -1176,7 +1183,27 @@ defmodule AfpWeb.DemandLive do
 
   defp demand_options(demand_items), do: Enum.map(demand_items, &{&1.title, &1.id})
 
-  defp first_error(changeset) do
+  defp refresh_error({:source_unhealthy, health_state}) do
+    "Source is #{Factory.labelize(health_state)}; repair source health before indexing."
+  end
+
+  defp refresh_error(:read_operation_not_allowed) do
+    "Manifest must allow read_index or read_candidates before AFP reads repo SQLite."
+  end
+
+  defp refresh_error(:candidates_table_missing),
+    do: "Repo SQLite is missing the candidates table."
+
+  defp refresh_error({:missing_columns, columns}) do
+    "Repo SQLite candidates table is missing: #{Enum.join(columns, ", ")}."
+  end
+
+  defp refresh_error(:sqlite3_unavailable), do: "sqlite3 is unavailable on this machine."
+  defp refresh_error({:sqlite_error, message}), do: "SQLite read failed: #{message}"
+  defp refresh_error({:invalid_sqlite_json, message}), do: "SQLite JSON output failed: #{message}"
+  defp refresh_error(_reason), do: "Could not refresh source."
+
+  defp first_error(%Ecto.Changeset{} = changeset) do
     changeset
     |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
     |> Enum.flat_map(fn {field, messages} ->
@@ -1184,4 +1211,6 @@ defmodule AfpWeb.DemandLive do
     end)
     |> List.first()
   end
+
+  defp first_error(_reason), do: nil
 end

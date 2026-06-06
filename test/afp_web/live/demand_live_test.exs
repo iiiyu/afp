@@ -9,6 +9,32 @@ defmodule AfpWeb.DemandLiveTest do
   alias Afp.Factory.Demand
   alias Afp.Factory.Portfolio
 
+  test "refreshes a source repo index from sqlite", %{conn: conn} do
+    path = sqlite_demand_repo_fixture()
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    view
+    |> form("#source-repo-form",
+      source_repo: %{
+        repo_path: path,
+        display_name: "SQLite Demand Source"
+      }
+    )
+    |> render_submit()
+
+    source_repo = hd(Demand.list_source_repos())
+
+    html =
+      view
+      |> form("#source-refresh-#{source_repo.id}")
+      |> render_submit()
+
+    assert html =~ "Demand source refreshed with 1 candidates."
+    assert html =~ "SQLite Candidate"
+    assert Enum.any?(Demand.list_candidates(), &(&1.source_repo.id == source_repo.id))
+  end
+
   test "creates source repo, candidate, template, and candidate handoff", %{conn: conn} do
     path = demand_repo_fixture()
 

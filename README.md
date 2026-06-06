@@ -29,7 +29,8 @@ attach evidence, and decide whether an app or release is allowed to advance.
   validation action, bounded Codex launch requests, and promotion into apps.
 - Demand source repositories: external research repos that keep detailed scans,
   evidence, candidate reports, product packages, prototype assets, and required
-  repo-local SQLite data while AFP indexes and routes their state.
+  repo-local SQLite data while AFP indexes and routes their state through
+  manifest-declared read operations.
 - Execution flow: tickets, review states, blocked reasons, and harness packets
   that describe context, constraints, verification, required evidence, and
   routing.

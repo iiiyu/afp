@@ -27,6 +27,48 @@ defmodule Afp.Factory.DemandTest do
     assert Enum.any?(source_repo.missing_paths, &String.ends_with?(&1, "demand.sqlite3"))
   end
 
+  test "refresh_source_repo_index imports candidates from repo-local sqlite" do
+    source_repo = demand_source_repo_fixture(%{"repo_path" => sqlite_demand_repo_fixture()})
+
+    assert {:ok, result} = Demand.refresh_source_repo_index(source_repo)
+
+    assert length(result.candidates) == 1
+    candidate = hd(result.candidates)
+    assert candidate.source_status == "validation-ready"
+    assert candidate.confidence == "medium"
+    assert candidate.score == 86
+    assert candidate.primary_path == "candidates/app/sqlite-candidate.md"
+    assert candidate.payload["sqlite_row"]["confidence"] == "medium-high"
+    assert result.source_repo.latest_index_at != nil
+    assert result.research_run.status == "completed"
+  end
+
+  test "refresh_source_repo_index requires declared sqlite read operation" do
+    path =
+      sqlite_demand_repo_fixture([], %{
+        "afp-demand-source.json" => """
+        {
+          "schema_version": 2,
+          "kind": "product_demand_repo",
+          "display_name": "No Read Demand",
+          "lanes": ["app"],
+          "agent_contract": {"entrypoint": "AGENTS.md", "required": true},
+          "write_targets": {"candidates": "candidates"},
+          "sqlite": {
+            "path": "demand.sqlite3",
+            "mode": "required",
+            "owner": "repo",
+            "allowed_operations": ["upsert_candidate"]
+          }
+        }
+        """
+      })
+
+    source_repo = demand_source_repo_fixture(%{"repo_path" => path})
+
+    assert {:error, :read_operation_not_allowed} = Demand.refresh_source_repo_index(source_repo)
+  end
+
   test "index_candidate keeps repo source status separate from afp status" do
     source_repo = demand_source_repo_fixture()
 

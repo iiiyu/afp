@@ -102,6 +102,95 @@ defmodule Afp.FactoryFixtures do
     temp_git_repo_fixture(files)
   end
 
+  def sqlite_demand_repo_fixture(rows \\ [], files \\ %{}) do
+    files = Map.put_new(files, "demand.sqlite3", nil)
+    path = demand_repo_fixture(files)
+    db_path = Path.join(path, "demand.sqlite3")
+    rows = if rows == [], do: [default_sqlite_candidate_row()], else: rows
+
+    sql = """
+    CREATE TABLE candidates (
+      id TEXT PRIMARY KEY,
+      lane TEXT,
+      title TEXT NOT NULL,
+      status TEXT,
+      score INTEGER,
+      confidence TEXT,
+      target_user TEXT,
+      demand_signal TEXT,
+      incumbent_weakness TEXT,
+      wedge_hypothesis TEXT,
+      validation_action TEXT,
+      primary_path TEXT,
+      current_report_path TEXT,
+      package_path TEXT,
+      evidence_paths TEXT,
+      observed_at TEXT,
+      limitations TEXT
+    );
+    #{Enum.map_join(rows, "\n", &sqlite_insert_candidate_sql/1)}
+    """
+
+    {_output, 0} = System.cmd("sqlite3", [db_path, sql], stderr_to_stdout: true)
+    path
+  end
+
+  defp default_sqlite_candidate_row do
+    %{
+      "id" => "sqlite-candidate-#{unique_integer()}",
+      "lane" => "app",
+      "title" => "SQLite Candidate #{unique_integer()}",
+      "status" => "validation_ready",
+      "score" => 86,
+      "confidence" => "medium-high",
+      "target_user" => "solo developer",
+      "demand_signal" => "SQLite source signal",
+      "incumbent_weakness" => "Incumbents miss the narrow workflow",
+      "wedge_hypothesis" => "Local-first indexed candidate can win",
+      "validation_action" => "Run five validation interviews",
+      "primary_path" => "candidates/app/sqlite-candidate.md",
+      "current_report_path" => "reports/app/sqlite-candidate-report.md",
+      "package_path" => "packages/app/sqlite-candidate",
+      "evidence_paths" => "evidence/app/source.md",
+      "observed_at" => "2026-06-06",
+      "limitations" => "Imported from fixture SQLite"
+    }
+  end
+
+  defp sqlite_insert_candidate_sql(row) do
+    columns = [
+      "id",
+      "lane",
+      "title",
+      "status",
+      "score",
+      "confidence",
+      "target_user",
+      "demand_signal",
+      "incumbent_weakness",
+      "wedge_hypothesis",
+      "validation_action",
+      "primary_path",
+      "current_report_path",
+      "package_path",
+      "evidence_paths",
+      "observed_at",
+      "limitations"
+    ]
+
+    values =
+      columns
+      |> Enum.map(&Map.get(row, &1))
+      |> Enum.map(&sqlite_value/1)
+      |> Enum.join(", ")
+
+    "INSERT INTO candidates (#{Enum.join(columns, ", ")}) VALUES (#{values});"
+  end
+
+  defp sqlite_value(nil), do: "NULL"
+  defp sqlite_value(value) when is_integer(value), do: Integer.to_string(value)
+  defp sqlite_value(value), do: "'#{value |> to_string() |> String.replace("'", "''")}'"
+
   def demand_candidate_fixture(source_repo \\ nil, attrs \\ %{}) do
     source_repo = source_repo || demand_source_repo_fixture()
 

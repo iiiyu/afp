@@ -14,6 +14,7 @@ defmodule Afp.Factory.Demand do
   alias Afp.Factory.Demand.ResearchRun
   alias Afp.Factory.Demand.SentMessage
   alias Afp.Factory.Demand.SourceRepo
+  alias Afp.Factory.Demand.SourceRepoAdapter
   alias Afp.Factory.Events
   alias Afp.Factory.Portfolio
   alias Afp.Repo
@@ -99,6 +100,63 @@ defmodule Afp.Factory.Demand do
   def refresh_source_repo(%SourceRepo{} = source_repo) do
     source_repo
     |> update_source_repo(source_repo_inspection_attrs(source_repo))
+  end
+
+  def refresh_source_repo_index(%SourceRepo{} = source_repo) do
+    with {:ok, refreshed_source_repo} <- refresh_source_repo(source_repo),
+         :ok <- ensure_source_indexable(refreshed_source_repo),
+         {:ok, candidate_attrs} <- SourceRepoAdapter.read_candidates(refreshed_source_repo) do
+      Repo.transaction(fn ->
+        indexed_candidates =
+          Enum.map(candidate_attrs, fn attrs ->
+            case index_candidate_in_transaction(refreshed_source_repo, attrs) do
+              {:ok, candidate} -> candidate
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end)
+
+        latest_index_at = Factory.now()
+
+        source_repo =
+          refreshed_source_repo
+          |> SourceRepo.changeset(%{
+            "latest_index_at" => latest_index_at,
+            "payload" =>
+              Map.merge(refreshed_source_repo.payload || %{}, %{
+                "latest_index" => %{
+                  "candidate_count" => length(indexed_candidates),
+                  "indexed_at" => DateTime.to_iso8601(latest_index_at)
+                }
+              })
+          })
+          |> Repo.update!()
+
+        {:ok, research_run} =
+          insert_research_run(%{
+            "demand_source_repo_id" => source_repo.id,
+            "run_type" => "repo_audit",
+            "objective" => "Refresh AFP index from repo-local SQLite candidates.",
+            "output_paths" => [source_repo.sqlite_path || "demand.sqlite3"],
+            "status" => "completed",
+            "completed_at" => latest_index_at,
+            "payload" => %{
+              "adapter" => "sqlite3",
+              "candidate_count" => length(indexed_candidates)
+            }
+          })
+
+        %{
+          source_repo: Repo.preload(source_repo, [:candidates, :research_runs]),
+          candidates:
+            Enum.map(indexed_candidates, &Repo.preload(&1, [:source_repo, :demand_item])),
+          research_run: research_run
+        }
+      end)
+      |> case do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> {:error, reason}
+      end
+    end
   end
 
   def source_repo_inspection_attrs(%SourceRepo{} = source_repo) do
@@ -585,6 +643,15 @@ defmodule Afp.Factory.Demand do
     Human confirmation is required before applying risky changes or promoting state.
     """
     |> String.trim()
+  end
+
+  defp ensure_source_indexable(%SourceRepo{health_state: "healthy"}), do: :ok
+
+  defp ensure_source_indexable(%SourceRepo{} = source_repo),
+    do: {:error, {:source_unhealthy, source_repo.health_state}}
+
+  defp index_candidate_in_transaction(%SourceRepo{} = source_repo, attrs) do
+    index_candidate(source_repo, attrs)
   end
 
   defp inspect_existing_source_repo(base, repo_path, manifest_path) do
