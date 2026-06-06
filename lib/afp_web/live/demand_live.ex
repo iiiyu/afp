@@ -11,6 +11,7 @@ defmodule AfpWeb.DemandLive do
   alias Afp.Factory.Demand.DemandItem
   alias Afp.Factory.Demand.MessageTemplate
   alias Afp.Factory.Demand.SourceRepo
+  alias Afp.Factory.Sessions
 
   @impl true
   def mount(params, _session, socket) do
@@ -27,6 +28,7 @@ defmodule AfpWeb.DemandLive do
      )
      |> assign(:source_launch_form, to_form(%{}, as: :source_launch))
      |> assign(:candidate_launch_form, to_form(%{}, as: :candidate_launch))
+     |> assign(:session_followup_form, to_form(%{}, as: :session_followup))
      |> assign(:demand_form, to_form(Demand.change_demand_item(%DemandItem{})))
      |> assign(:launch_form, to_form(Demand.change_launch_request(%CodexLaunchRequest{})))
      |> assign(:promote_form, to_form(%{}, as: :promotion))
@@ -238,6 +240,43 @@ defmodule AfpWeb.DemandLive do
     end
   end
 
+  def handle_event("create_session_followup", %{"session_followup" => params}, socket) do
+    cond do
+      Factory.blank?(params["research_run_id"]) ->
+        {:noreply, put_flash(socket, :error, "Choose a research run first.")}
+
+      Factory.blank?(params["codex_session_id"]) ->
+        {:noreply, put_flash(socket, :error, "Choose a Codex session first.")}
+
+      Factory.blank?(params["message_template_id"]) ->
+        {:noreply, put_flash(socket, :error, "Choose a message template first.")}
+
+      true ->
+        research_run = Demand.get_research_run!(params["research_run_id"])
+        codex_session = Sessions.get_session!(params["codex_session_id"])
+        template = Demand.get_message_template!(params["message_template_id"])
+
+        case Demand.create_session_followup(research_run, codex_session, template, params) do
+          {:ok, _records} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Session follow-up handoff created.")
+             |> assign(:session_followup_form, to_form(%{}, as: :session_followup))
+             |> load_demand(socket.assigns.filters)}
+
+          {:error, {:missing_variables, variables}} ->
+            {:noreply,
+             put_flash(socket, :error, "Template is missing: #{Enum.join(variables, ", ")}.")}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, first_error(reason) || refresh_error(reason))
+             |> load_demand(socket.assigns.filters)}
+        end
+    end
+  end
+
   def handle_event("create_demand", %{"demand_item" => params}, socket) do
     case Demand.create_demand_item(params) do
       {:ok, _demand_item} ->
@@ -327,6 +366,7 @@ defmodule AfpWeb.DemandLive do
     research_runs = Demand.list_research_runs()
     message_templates = Demand.list_message_templates(%{"active" => "true"})
     launch_requests = Demand.list_launch_requests()
+    codex_sessions = Sessions.list_sessions()
 
     socket
     |> assign(:source_repos, source_repos)
@@ -336,6 +376,7 @@ defmodule AfpWeb.DemandLive do
     |> assign(:handoff_candidates, Demand.list_handoff_candidates())
     |> assign(:research_runs, research_runs)
     |> assign(:message_templates, message_templates)
+    |> assign(:codex_sessions, codex_sessions)
     |> assign(:demand_items, demand_items)
     |> assign(:launch_requests, launch_requests)
     |> assign(
@@ -1156,6 +1197,75 @@ defmodule AfpWeb.DemandLive do
               </.disclosure>
 
               <.disclosure
+                title="Continue Session"
+                subtitle="Draft a follow-up message for an existing Codex session."
+              >
+                <.form
+                  for={@session_followup_form}
+                  id="session-followup-form"
+                  phx-submit="create_session_followup"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@session_followup_form[:research_run_id]}
+                    type="select"
+                    label="Research run"
+                    prompt="Choose run"
+                    options={research_run_options(@research_runs)}
+                  />
+                  <.input
+                    field={@session_followup_form[:codex_session_id]}
+                    type="select"
+                    label="Codex session"
+                    prompt="Choose session"
+                    options={codex_session_options(@codex_sessions)}
+                  />
+                  <.input
+                    field={@session_followup_form[:message_template_id]}
+                    type="select"
+                    label="Template"
+                    prompt="Choose template"
+                    options={message_template_options(@message_templates)}
+                  />
+                  <.input field={@session_followup_form[:title]} label="Launch title" />
+                  <.input
+                    field={@session_followup_form[:objective]}
+                    type="textarea"
+                    label="Objective"
+                    rows="2"
+                  />
+                  <.input
+                    field={@session_followup_form[:review_note]}
+                    type="textarea"
+                    label="Review note"
+                    rows="3"
+                  />
+                  <.input
+                    field={@session_followup_form[:risk_level]}
+                    type="select"
+                    label="Risk"
+                    options={Factory.options(Factory.risk_levels())}
+                  />
+                  <.input
+                    field={@session_followup_form[:status]}
+                    type="select"
+                    label="Status"
+                    options={Factory.options(Factory.launch_request_statuses())}
+                  />
+                  <.input field={@session_followup_form[:confirmation]} label="Confirmation" />
+                  <.input
+                    field={@session_followup_form[:edited_body]}
+                    type="textarea"
+                    label="Edited message"
+                    rows="8"
+                  />
+                  <.button type="submit" variant="primary">
+                    <.icon name="hero-chat-bubble-left-right" class="size-4" /> Create follow-up
+                  </.button>
+                </.form>
+              </.disclosure>
+
+              <.disclosure
                 title="Add Demand Item"
                 subtitle="Capture source evidence, target user, wedge, and validation action."
               >
@@ -1317,6 +1427,18 @@ defmodule AfpWeb.DemandLive do
   defp candidate_options(candidates), do: Enum.map(candidates, &{&1.title, &1.id})
 
   defp message_template_options(templates), do: Enum.map(templates, &{&1.name, &1.id})
+
+  defp research_run_options(research_runs) do
+    Enum.map(research_runs, fn run ->
+      {"#{Factory.labelize(run.run_type)} · #{run.objective}", run.id}
+    end)
+  end
+
+  defp codex_session_options(codex_sessions) do
+    Enum.map(codex_sessions, fn session ->
+      {session.external_session_id, session.id}
+    end)
+  end
 
   defp demand_options(demand_items), do: Enum.map(demand_items, &{&1.title, &1.id})
 

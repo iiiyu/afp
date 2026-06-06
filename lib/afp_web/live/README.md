@@ -16,7 +16,7 @@ context, and a separate action rail for forms that mutate state.
 ## File Inventory
 
 - `today_live.ex` - Today command center with focus queues and quick ticket creation.
-- `demand_live.ex` - Demand source repo health, source-level manual idea/URL handoffs, indexed candidate queues, package verification, research runs, message templates, manual Codex launch handoffs, legacy demand items, and promotion into apps.
+- `demand_live.ex` - Demand source repo health, source-level manual idea/URL handoffs, indexed candidate queues, package verification, research runs, message templates, manual Codex launch handoffs, existing-session follow-ups, legacy demand items, and promotion into apps.
 - `app_live/index.ex` - App portfolio table, filters, and app creation.
 - `app_live/show.ex` - App detail cockpit with lifecycle, tickets, sessions, releases, evidence, and metrics entry points.
 - `board_live.ex` - Draggable ticket board and harness packet builder.

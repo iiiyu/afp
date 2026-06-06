@@ -6,6 +6,7 @@ defmodule Afp.FactoryFixtures do
   alias Afp.Factory.Evidence
   alias Afp.Factory.Portfolio
   alias Afp.Factory.Releases
+  alias Afp.Factory.Sessions
   alias Afp.Factory.Work
 
   def unique_integer, do: System.unique_integer([:positive])
@@ -229,6 +230,24 @@ defmodule Afp.FactoryFixtures do
 
     {:ok, template} = Demand.create_message_template(Map.merge(defaults, attrs))
     template
+  end
+
+  def codex_session_fixture(attrs \\ %{}) do
+    external_session_id =
+      Map.get(attrs, "external_session_id") || Map.get(attrs, :external_session_id) ||
+        "session-#{unique_integer()}"
+
+    defaults = %{
+      "session_id" => external_session_id,
+      "cwd" => unique_repo_path(),
+      "hook_event_name" => "SessionStart",
+      "model" => "gpt-5",
+      "turn_id" => "turn-#{unique_integer()}",
+      "timestamp" => DateTime.to_iso8601(DateTime.utc_now())
+    }
+
+    {:ok, _hook_event, session} = Sessions.receive_hook(Map.merge(defaults, attrs))
+    session
   end
 
   def app_fixture(attrs \\ %{}) do

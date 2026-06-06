@@ -146,6 +146,43 @@ defmodule Afp.Factory.DemandTest do
     assert records.sent_message.rendered_body =~ "receipt scanner"
   end
 
+  test "create_session_followup links a message to an existing Codex session" do
+    source_repo = demand_source_repo_fixture()
+
+    {:ok, research_run} =
+      Demand.create_research_run(%{
+        "demand_source_repo_id" => source_repo.id,
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "objective" => "Research follow-up target",
+        "input_text" => "receipt scanner"
+      })
+
+    session = codex_session_fixture(%{"cwd" => source_repo.repo_path})
+
+    template =
+      message_template_fixture(%{
+        "name" => "Continue Demand Session",
+        "default_target" => "existing_session",
+        "required_variables" => "session_id\nreview_note",
+        "body" => "Continue {{session_id}} with reviewer note: {{review_note}}"
+      })
+
+    assert {:ok, records} =
+             Demand.create_session_followup(research_run, session, template, %{
+               "review_note" => "Tighten the evidence table",
+               "risk_level" => "normal",
+               "status" => "ready"
+             })
+
+    assert records.launch_request.source_type == "demand_research_run"
+    assert records.launch_request.source_id == research_run.id
+    assert records.research_run.codex_session_id == session.id
+    assert records.sent_message.codex_session_id == session.id
+    assert records.sent_message.target == "existing_session"
+    assert records.sent_message.rendered_body =~ "Tighten the evidence table"
+  end
+
   test "verify_candidate_package marks app package ready when required files exist" do
     package_path = "packages/app/ready-app"
 

@@ -224,8 +224,8 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
   demand, release, business, repository, and session queues grouped below it.
 - **Demand**: upstream demand-source console first, with configured research
   repos, manual idea/URL research handoffs, candidate pickup, product packages,
-  package-file verification, launch requests, and promotion into apps kept as
-  human-confirmed action layers.
+  package-file verification, launch requests, existing-session follow-ups, and
+  promotion into apps kept as human-confirmed action layers.
 - **Apps**: portfolio table as the primary read model, with filters and app
   creation separated into lower-level controls.
 - **Board**: draggable ticket board as the primary work surface, with harness

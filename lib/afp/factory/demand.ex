@@ -17,6 +17,7 @@ defmodule Afp.Factory.Demand do
   alias Afp.Factory.Demand.SourceRepoAdapter
   alias Afp.Factory.Events
   alias Afp.Factory.Portfolio
+  alias Afp.Factory.Sessions.CodexSession
   alias Afp.Repo
 
   @launch_attr_atoms %{
@@ -61,7 +62,8 @@ defmodule Afp.Factory.Demand do
     "run_type" => :run_type,
     "lane" => :lane,
     "input_text" => :input_text,
-    "input_url" => :input_url
+    "input_url" => :input_url,
+    "review_note" => :review_note
   }
 
   def list_source_repos(params \\ %{}) do
@@ -399,6 +401,18 @@ defmodule Afp.Factory.Demand do
     ])
   end
 
+  def get_research_run!(id) do
+    ResearchRun
+    |> Repo.get!(id)
+    |> Repo.preload([
+      :source_repo,
+      :candidate,
+      :message_template,
+      :launch_request,
+      :codex_session
+    ])
+  end
+
   def change_research_run(%ResearchRun{} = research_run, attrs \\ %{}) do
     ResearchRun.changeset(research_run, attrs)
   end
@@ -611,6 +625,95 @@ defmodule Afp.Factory.Demand do
               }
             else
               {:error, changeset} -> Repo.rollback(changeset)
+            end
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
+      end)
+      |> case do
+        {:ok, records} -> {:ok, records}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  def create_session_followup(
+        %ResearchRun{} = research_run,
+        %CodexSession{} = codex_session,
+        %MessageTemplate{} = template,
+        attrs
+      ) do
+    research_run = Repo.preload(research_run, [:source_repo, :candidate, :launch_request])
+
+    with {:ok, rendered_message} <-
+           render_message_template(
+             template,
+             run_template_variables(research_run, codex_session, attrs)
+           ) do
+      edited_body = Factory.trim_nil(attr_value_or_atom(attrs, "edited_body"))
+      handoff_text = edited_body || rendered_message
+      status = Factory.trim_nil(attr_value_or_atom(attrs, "status")) || "ready"
+
+      title =
+        Factory.trim_nil(attr_value_or_atom(attrs, "title")) ||
+          "#{template.name}: continue #{codex_session.external_session_id}"
+
+      objective =
+        Factory.trim_nil(attr_value_or_atom(attrs, "objective")) || template.purpose || title
+
+      Repo.transaction(fn ->
+        launch_attrs = %{
+          "source_type" => "demand_research_run",
+          "source_id" => research_run.id,
+          "title" => title,
+          "objective" => objective,
+          "context" => session_followup_context(research_run, codex_session),
+          "risk_level" => Factory.trim_nil(attr_value_or_atom(attrs, "risk_level")) || "normal",
+          "launch_mode" =>
+            Factory.trim_nil(attr_value_or_atom(attrs, "launch_mode")) || "manual_handoff",
+          "status" => status,
+          "confirmation" => Factory.trim_nil(attr_value_or_atom(attrs, "confirmation")),
+          "handoff_text" => handoff_text
+        }
+
+        case create_launch_request(launch_attrs) do
+          {:ok, launch_request} ->
+            research_run =
+              research_run
+              |> ResearchRun.changeset(%{
+                "message_template_id" => template.id,
+                "codex_launch_request_id" => launch_request.id,
+                "codex_session_id" => codex_session.id,
+                "rendered_message" => rendered_message,
+                "status" => if(status == "ready", do: "ready", else: research_run.status),
+                "review_note" =>
+                  Factory.trim_nil(attr_value_or_atom(attrs, "review_note")) ||
+                    research_run.review_note
+              })
+              |> Repo.update!()
+
+            case insert_sent_message(%{
+                   "demand_research_run_id" => research_run.id,
+                   "message_template_id" => template.id,
+                   "codex_launch_request_id" => launch_request.id,
+                   "codex_session_id" => codex_session.id,
+                   "target" => "existing_session",
+                   "status" => if(status == "ready", do: "confirmed", else: "draft"),
+                   "rendered_body" => rendered_message,
+                   "edited_body" => edited_body,
+                   "confirmed_at" => if(status == "ready", do: Factory.now(), else: nil)
+                 }) do
+              {:ok, sent_message} ->
+                %{
+                  launch_request: launch_request,
+                  research_run:
+                    Repo.preload(research_run, [:source_repo, :candidate, :codex_session]),
+                  sent_message: sent_message
+                }
+
+              {:error, changeset} ->
+                Repo.rollback(changeset)
             end
 
           {:error, changeset} ->
@@ -1156,6 +1259,38 @@ defmodule Afp.Factory.Demand do
     }
   end
 
+  defp run_template_variables(
+         %ResearchRun{} = research_run,
+         %CodexSession{} = codex_session,
+         attrs
+       ) do
+    source_repo = research_run.source_repo
+    candidate = research_run.candidate
+
+    review_note =
+      Factory.trim_nil(attr_value_or_atom(attrs, "review_note")) || research_run.review_note
+
+    %{
+      "repo_path" => source_repo && source_repo.repo_path,
+      "source_repo_path" => source_repo && source_repo.repo_path,
+      "source_display_name" => source_repo && source_repo.display_name,
+      "agent_entrypoint" => (source_repo && source_repo.agent_entrypoint) || "AGENTS.md",
+      "run_id" => research_run.id,
+      "run_type" => research_run.run_type,
+      "lane" => research_run.lane,
+      "objective" => research_run.objective,
+      "input_text" => research_run.input_text,
+      "input_url" => research_run.input_url,
+      "candidate_id" => candidate && candidate.external_id,
+      "candidate_title" => candidate && candidate.title,
+      "session_id" => codex_session.external_session_id,
+      "session_cwd" => codex_session.cwd,
+      "session_status" => codex_session.status,
+      "review_note" => review_note,
+      "output_paths" => Enum.join(research_run.output_paths || [], "\n")
+    }
+  end
+
   defp candidate_template_variables(%Candidate{} = candidate) do
     source_repo = candidate.source_repo
 
@@ -1208,6 +1343,25 @@ defmodule Afp.Factory.Demand do
       "SQLite path: #{source_repo.sqlite_path || "not declared"}",
       "Allowed SQLite operations: #{Enum.join(source_repo.sqlite_allowed_operations || [], ", ")}",
       "Human confirmation is required before sending, package generation, promotion, project repo creation, or implementation launch."
+    ]
+    |> Enum.join("\n")
+  end
+
+  defp session_followup_context(%ResearchRun{} = research_run, %CodexSession{} = codex_session) do
+    source_repo = research_run.source_repo
+    candidate = research_run.candidate
+
+    [
+      "Demand research run: #{research_run.id}",
+      "Run type: #{research_run.run_type}",
+      "Objective: #{research_run.objective}",
+      "Source repo: #{source_repo && source_repo.repo_path}",
+      "Candidate: #{candidate && candidate.title}",
+      "Existing Codex session: #{codex_session.external_session_id}",
+      "Session cwd: #{codex_session.cwd || "unknown"}",
+      "Session status: #{codex_session.status}",
+      "Review note: #{research_run.review_note || "none"}",
+      "Human confirmation is required before applying risky follow-up changes, package overwrite, project repo creation, promotion, or implementation launch."
     ]
     |> Enum.join("\n")
   end

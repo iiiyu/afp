@@ -189,6 +189,52 @@ defmodule AfpWeb.DemandLiveTest do
     assert Demand.get_candidate!(candidate.id).afp_status == "package_ready"
   end
 
+  test "creates a follow-up handoff for an existing Codex session", %{conn: conn} do
+    source_repo = demand_source_repo_fixture()
+
+    {:ok, research_run} =
+      Demand.create_research_run(%{
+        "demand_source_repo_id" => source_repo.id,
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "objective" => "Review a demand run",
+        "input_text" => "tiny receipt scanner"
+      })
+
+    session = codex_session_fixture(%{"cwd" => source_repo.repo_path})
+
+    template =
+      message_template_fixture(%{
+        "name" => "Live Continue Session",
+        "default_target" => "existing_session",
+        "required_variables" => "session_id\nreview_note",
+        "body" => "Continue {{session_id}} using {{review_note}}."
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#session-followup-form",
+        session_followup: %{
+          research_run_id: research_run.id,
+          codex_session_id: session.id,
+          message_template_id: template.id,
+          review_note: "Add package evidence",
+          risk_level: "normal",
+          status: "ready"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Session follow-up handoff created."
+
+    assert Enum.any?(
+             Demand.list_launch_requests(),
+             &(&1.source_type == "demand_research_run" and &1.source_id == research_run.id)
+           )
+  end
+
   test "creates a demand item", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/demand")
 
