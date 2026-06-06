@@ -163,6 +163,32 @@ defmodule AfpWeb.DemandLiveTest do
            )
   end
 
+  test "verifies a candidate package from the source repo", %{conn: conn} do
+    package_path = "packages/app/live-ready"
+
+    files =
+      ~w(README.md PRD.md VALIDATION_PLAN.md MVP_SCOPE.md DATA_MODEL.md UX_FLOW.md PROTOTYPE.md)
+      |> Map.new(&{Path.join(package_path, &1), "# #{&1}\n"})
+
+    source_repo = demand_source_repo_fixture(%{"repo_path" => demand_repo_fixture(files)})
+
+    candidate =
+      demand_candidate_fixture(source_repo, %{
+        "title" => "Live Package Candidate",
+        "package_path" => package_path
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#candidate-package-#{candidate.id}")
+      |> render_submit()
+
+    assert html =~ "Package verified for Live Package Candidate."
+    assert Demand.get_candidate!(candidate.id).afp_status == "package_ready"
+  end
+
   test "creates a demand item", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/demand")
 

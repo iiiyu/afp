@@ -119,6 +119,24 @@ defmodule AfpWeb.DemandLive do
     end
   end
 
+  def handle_event("verify_candidate_package", %{"candidate_id" => candidate_id}, socket) do
+    candidate = Demand.get_candidate!(candidate_id)
+
+    case Demand.verify_candidate_package(candidate) do
+      {:ok, package_candidate} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Package verified for #{package_candidate.title}.")
+         |> load_demand(socket.assigns.filters)}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, first_error(reason) || refresh_error(reason))
+         |> load_demand(socket.assigns.filters)}
+    end
+  end
+
   def handle_event("pickup_candidate", %{"candidate_id" => candidate_id}, socket) do
     candidate = Demand.get_candidate!(candidate_id)
 
@@ -561,6 +579,16 @@ defmodule AfpWeb.DemandLive do
                           class="inline-flex w-full items-center justify-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
                         >
                           <.icon name="hero-inbox-arrow-down" class="size-3" /> Pick up
+                        </button>
+                      </.form>
+                      <.form
+                        for={to_form(%{}, as: :candidate_package)}
+                        id={"candidate-package-#{candidate.id}"}
+                        phx-submit="verify_candidate_package"
+                      >
+                        <input type="hidden" name="candidate_id" value={candidate.id} />
+                        <button class="inline-flex w-full items-center justify-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                          <.icon name="hero-archive-box" class="size-3" /> Verify package
                         </button>
                       </.form>
                       <.form
@@ -1305,6 +1333,16 @@ defmodule AfpWeb.DemandLive do
 
   defp refresh_error({:missing_columns, columns}) do
     "Repo SQLite candidates table is missing: #{Enum.join(columns, ", ")}."
+  end
+
+  defp refresh_error(:source_repo_missing), do: "Candidate is not linked to a source repo."
+  defp refresh_error(:package_path_missing), do: "Candidate does not have a package path."
+
+  defp refresh_error(:package_outside_source_repo),
+    do: "Package path must stay inside the source repo."
+
+  defp refresh_error({:package_missing, paths}) do
+    "Package is missing required files: #{Enum.join(paths, ", ")}."
   end
 
   defp refresh_error(:sqlite3_unavailable), do: "sqlite3 is unavailable on this machine."

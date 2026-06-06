@@ -146,6 +146,37 @@ defmodule Afp.Factory.DemandTest do
     assert records.sent_message.rendered_body =~ "receipt scanner"
   end
 
+  test "verify_candidate_package marks app package ready when required files exist" do
+    package_path = "packages/app/ready-app"
+
+    files =
+      ~w(README.md PRD.md VALIDATION_PLAN.md MVP_SCOPE.md DATA_MODEL.md UX_FLOW.md PROTOTYPE.md)
+      |> Map.new(&{Path.join(package_path, &1), "# #{&1}\n"})
+
+    source_repo = demand_source_repo_fixture(%{"repo_path" => demand_repo_fixture(files)})
+    candidate = demand_candidate_fixture(source_repo, %{"package_path" => package_path})
+
+    assert {:ok, package_candidate} = Demand.verify_candidate_package(candidate)
+
+    assert package_candidate.afp_status == "package_ready"
+    assert package_candidate.approved_for_package_at != nil
+  end
+
+  test "verify_candidate_package reports missing required files" do
+    package_path = "packages/game/missing-game"
+    source_repo = demand_source_repo_fixture(%{"repo_path" => demand_repo_fixture(%{})})
+
+    candidate =
+      demand_candidate_fixture(source_repo, %{"lane" => "game", "package_path" => package_path})
+
+    assert {:error, {:package_missing, missing_paths}} =
+             Demand.verify_candidate_package(candidate)
+
+    assert "PRD.md" in missing_paths
+    assert "DESIGN_KIT.md" in missing_paths
+    assert "IMPLEMENTATION_BRIEF.md" in missing_paths
+  end
+
   test "create_demand_item stores pre-app validation work" do
     {:ok, demand_item} =
       Demand.create_demand_item(%{

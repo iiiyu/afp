@@ -333,6 +333,52 @@ defmodule Afp.Factory.Demand do
     transition_candidate(candidate, "package_requested", attrs)
   end
 
+  def inspect_candidate_package(%Candidate{} = candidate) do
+    candidate = Repo.preload(candidate, :source_repo)
+
+    with {:ok, package_root} <- candidate_package_root(candidate) do
+      required_files = required_package_files(candidate.lane)
+
+      required_paths =
+        Enum.map(required_files, fn file ->
+          %{relative_path: file, full_path: Path.join(package_root, file)}
+        end)
+
+      missing_paths =
+        required_paths
+        |> Enum.reject(&File.regular?(&1.full_path))
+        |> Enum.map(& &1.relative_path)
+
+      {:ok,
+       %{
+         package_root: package_root,
+         required_files: required_files,
+         missing_paths: missing_paths,
+         ready?: missing_paths == []
+       }}
+    end
+  end
+
+  def verify_candidate_package(%Candidate{} = candidate, attrs \\ %{}) do
+    case inspect_candidate_package(candidate) do
+      {:ok, %{ready?: true} = inspection} ->
+        attrs =
+          attrs
+          |> Map.put_new(
+            "review_note",
+            "Package verified at #{Path.relative_to_cwd(inspection.package_root)}."
+          )
+
+        transition_candidate(candidate, "package_ready", attrs)
+
+      {:ok, %{missing_paths: missing_paths}} ->
+        {:error, {:package_missing, missing_paths}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   def mark_candidate_handoff_ready(%Candidate{} = candidate, attrs \\ %{}) do
     transition_candidate(candidate, "handoff_ready", attrs)
   end
@@ -1041,6 +1087,37 @@ defmodule Afp.Factory.Demand do
     do: Map.put_new(attrs, "parked_at", Factory.now())
 
   defp put_candidate_timestamp(attrs, _status), do: attrs
+
+  defp candidate_package_root(%Candidate{source_repo: nil}), do: {:error, :source_repo_missing}
+
+  defp candidate_package_root(%Candidate{package_path: package_path})
+       when package_path in [nil, ""],
+       do: {:error, :package_path_missing}
+
+  defp candidate_package_root(%Candidate{} = candidate) do
+    source_root = Factory.expand_path(candidate.source_repo.repo_path)
+
+    package_root =
+      if Path.type(candidate.package_path) == :absolute do
+        Factory.expand_path(candidate.package_path)
+      else
+        source_root
+        |> Path.join(candidate.package_path)
+        |> Factory.expand_path()
+      end
+
+    if package_root == source_root or String.starts_with?(package_root, source_root <> "/") do
+      {:ok, package_root}
+    else
+      {:error, :package_outside_source_repo}
+    end
+  end
+
+  defp required_package_files("game"), do: ~w(PRD.md DESIGN_KIT.md IMPLEMENTATION_BRIEF.md)
+
+  defp required_package_files(_lane) do
+    ~w(README.md PRD.md VALIDATION_PLAN.md MVP_SCOPE.md DATA_MODEL.md UX_FLOW.md PROTOTYPE.md)
+  end
 
   defp insert_research_run(attrs) do
     %ResearchRun{}
