@@ -25,6 +25,7 @@ defmodule AfpWeb.DemandLive do
        :message_template_form,
        to_form(Demand.change_message_template(%MessageTemplate{}))
      )
+     |> assign(:source_launch_form, to_form(%{}, as: :source_launch))
      |> assign(:candidate_launch_form, to_form(%{}, as: :candidate_launch))
      |> assign(:demand_form, to_form(Demand.change_demand_item(%DemandItem{})))
      |> assign(:launch_form, to_form(Demand.change_launch_request(%CodexLaunchRequest{})))
@@ -150,6 +151,39 @@ defmodule AfpWeb.DemandLive do
 
       {:error, changeset} ->
         {:noreply, assign(socket, :message_template_form, to_form(changeset))}
+    end
+  end
+
+  def handle_event("create_source_launch", %{"source_launch" => params}, socket) do
+    cond do
+      Factory.blank?(params["source_repo_id"]) ->
+        {:noreply, put_flash(socket, :error, "Choose a source repo first.")}
+
+      Factory.blank?(params["message_template_id"]) ->
+        {:noreply, put_flash(socket, :error, "Choose a message template first.")}
+
+      true ->
+        source_repo = Demand.get_source_repo!(params["source_repo_id"])
+        template = Demand.get_message_template!(params["message_template_id"])
+
+        case Demand.create_source_launch_request(source_repo, template, params) do
+          {:ok, _records} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Source research handoff created.")
+             |> assign(:source_launch_form, to_form(%{}, as: :source_launch))
+             |> load_demand(socket.assigns.filters)}
+
+          {:error, {:missing_variables, variables}} ->
+            {:noreply,
+             put_flash(socket, :error, "Template is missing: #{Enum.join(variables, ", ")}.")}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, first_error(reason) || refresh_error(reason))
+             |> load_demand(socket.assigns.filters)}
+        end
     end
   end
 
@@ -958,6 +992,81 @@ defmodule AfpWeb.DemandLive do
                   />
                   <.button type="submit" variant="primary">
                     <.icon name="hero-document-plus" class="size-4" /> Add template
+                  </.button>
+                </.form>
+              </.disclosure>
+
+              <.disclosure
+                title="Source Research Handoff"
+                subtitle="Draft a manual idea or URL research run before a candidate exists."
+              >
+                <.form
+                  for={@source_launch_form}
+                  id="source-launch-form"
+                  phx-submit="create_source_launch"
+                  class="space-y-2"
+                >
+                  <.input
+                    field={@source_launch_form[:source_repo_id]}
+                    type="select"
+                    label="Source repo"
+                    prompt="Choose source"
+                    options={source_repo_options(@source_repos)}
+                  />
+                  <.input
+                    field={@source_launch_form[:message_template_id]}
+                    type="select"
+                    label="Template"
+                    prompt="Choose template"
+                    options={message_template_options(@message_templates)}
+                  />
+                  <.input
+                    field={@source_launch_form[:run_type]}
+                    type="select"
+                    label="Run type"
+                    options={Factory.options(Factory.demand_research_run_types())}
+                  />
+                  <.input
+                    field={@source_launch_form[:lane]}
+                    type="select"
+                    label="Lane"
+                    options={Factory.options(Factory.demand_lanes())}
+                  />
+                  <.input
+                    field={@source_launch_form[:input_text]}
+                    type="textarea"
+                    label="Idea or keywords"
+                    rows="3"
+                  />
+                  <.input field={@source_launch_form[:input_url]} label="URL" />
+                  <.input field={@source_launch_form[:title]} label="Launch title" />
+                  <.input
+                    field={@source_launch_form[:objective]}
+                    type="textarea"
+                    label="Objective"
+                    rows="2"
+                  />
+                  <.input
+                    field={@source_launch_form[:risk_level]}
+                    type="select"
+                    label="Risk"
+                    options={Factory.options(Factory.risk_levels())}
+                  />
+                  <.input
+                    field={@source_launch_form[:status]}
+                    type="select"
+                    label="Status"
+                    options={Factory.options(Factory.launch_request_statuses())}
+                  />
+                  <.input field={@source_launch_form[:confirmation]} label="Confirmation" />
+                  <.input
+                    field={@source_launch_form[:edited_body]}
+                    type="textarea"
+                    label="Edited message"
+                    rows="8"
+                  />
+                  <.button type="submit" variant="primary">
+                    <.icon name="hero-magnifying-glass" class="size-4" /> Create research handoff
                   </.button>
                 </.form>
               </.disclosure>

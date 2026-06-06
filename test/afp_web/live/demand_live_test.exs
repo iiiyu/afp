@@ -107,6 +107,62 @@ defmodule AfpWeb.DemandLiveTest do
     assert Enum.any?(Demand.list_research_runs(), &(&1.demand_candidate_id == candidate.id))
   end
 
+  test "creates a source research handoff before a candidate exists", %{conn: conn} do
+    path = demand_repo_fixture()
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    view
+    |> form("#source-repo-form",
+      source_repo: %{
+        repo_path: path,
+        display_name: "Manual Research Source"
+      }
+    )
+    |> render_submit()
+
+    source_repo = hd(Demand.list_source_repos())
+
+    view
+    |> form("#message-template-form",
+      message_template: %{
+        name: "Manual Idea Research",
+        purpose: "Research manual idea",
+        default_run_type: "manual_idea",
+        default_lane: "app",
+        default_target: "manual_handoff",
+        required_variables: "repo_path\ninput_text",
+        body: "Follow {{agent_entrypoint}} in {{repo_path}} and research {{input_text}}."
+      }
+    )
+    |> render_submit()
+
+    template = hd(Demand.list_message_templates())
+
+    html =
+      view
+      |> form("#source-launch-form",
+        source_launch: %{
+          source_repo_id: source_repo.id,
+          message_template_id: template.id,
+          run_type: "manual_idea",
+          lane: "app",
+          input_text: "tiny business receipt scanner",
+          risk_level: "normal",
+          status: "ready"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Source research handoff created."
+    assert Enum.any?(Demand.list_launch_requests(), &(&1.source_type == "demand_source_repo"))
+
+    assert Enum.any?(
+             Demand.list_research_runs(),
+             &(&1.input_text == "tiny business receipt scanner")
+           )
+  end
+
   test "creates a demand item", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/demand")
 

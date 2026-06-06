@@ -118,6 +118,34 @@ defmodule Afp.Factory.DemandTest do
     assert records.sent_message.status == "confirmed"
   end
 
+  test "create_source_launch_request records manual idea research before a candidate exists" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "name" => "Manual Idea Source Research",
+        "default_run_type" => "manual_idea",
+        "required_variables" => "repo_path\ninput_text",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}} and research {{input_text}}."
+      })
+
+    assert {:ok, records} =
+             Demand.create_source_launch_request(source_repo, template, %{
+               "run_type" => "manual_idea",
+               "lane" => "app",
+               "input_text" => "receipt scanner for tiny businesses",
+               "risk_level" => "normal",
+               "status" => "ready"
+             })
+
+    assert records.launch_request.source_type == "demand_source_repo"
+    assert records.launch_request.source_id == source_repo.id
+    assert records.research_run.demand_source_repo_id == source_repo.id
+    assert records.research_run.input_text == "receipt scanner for tiny businesses"
+    assert records.research_run.status == "ready"
+    assert records.sent_message.rendered_body =~ "receipt scanner"
+  end
+
   test "create_demand_item stores pre-app validation work" do
     {:ok, demand_item} =
       Demand.create_demand_item(%{

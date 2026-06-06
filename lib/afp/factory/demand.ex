@@ -57,7 +57,11 @@ defmodule Afp.Factory.Demand do
     "risk_level" => :risk_level,
     "launch_mode" => :launch_mode,
     "confirmation" => :confirmation,
-    "demand_status" => :demand_status
+    "demand_status" => :demand_status,
+    "run_type" => :run_type,
+    "lane" => :lane,
+    "input_text" => :input_text,
+    "input_url" => :input_url
   }
 
   def list_source_repos(params \\ %{}) do
@@ -397,6 +401,98 @@ defmodule Afp.Factory.Demand do
       {:ok, rendered}
     else
       {:error, {:missing_variables, missing_variables}}
+    end
+  end
+
+  def create_source_launch_request(
+        %SourceRepo{} = source_repo,
+        %MessageTemplate{} = template,
+        attrs
+      ) do
+    with {:ok, rendered_message} <-
+           render_message_template(template, source_template_variables(source_repo, attrs)) do
+      edited_body = Factory.trim_nil(attr_value_or_atom(attrs, "edited_body"))
+      handoff_text = edited_body || rendered_message
+      status = Factory.trim_nil(attr_value_or_atom(attrs, "status")) || "ready"
+
+      run_type =
+        Factory.trim_nil(attr_value_or_atom(attrs, "run_type")) || template.default_run_type
+
+      lane = Factory.trim_nil(attr_value_or_atom(attrs, "lane")) || template.default_lane
+      input_text = Factory.trim_nil(attr_value_or_atom(attrs, "input_text"))
+      input_url = Factory.trim_nil(attr_value_or_atom(attrs, "input_url"))
+
+      title =
+        Factory.trim_nil(attr_value_or_atom(attrs, "title")) ||
+          "#{template.name}: #{source_repo.display_name}"
+
+      objective =
+        Factory.trim_nil(attr_value_or_atom(attrs, "objective")) || template.purpose || title
+
+      Repo.transaction(fn ->
+        launch_attrs = %{
+          "source_type" => "demand_source_repo",
+          "source_id" => source_repo.id,
+          "title" => title,
+          "objective" => objective,
+          "context" => source_launch_context(source_repo, run_type, lane, input_text, input_url),
+          "risk_level" => Factory.trim_nil(attr_value_or_atom(attrs, "risk_level")) || "normal",
+          "launch_mode" =>
+            Factory.trim_nil(attr_value_or_atom(attrs, "launch_mode")) || "manual_handoff",
+          "status" => status,
+          "confirmation" => Factory.trim_nil(attr_value_or_atom(attrs, "confirmation")),
+          "handoff_text" => handoff_text
+        }
+
+        case create_launch_request(launch_attrs) do
+          {:ok, launch_request} ->
+            run_attrs = %{
+              "demand_source_repo_id" => source_repo.id,
+              "message_template_id" => template.id,
+              "codex_launch_request_id" => launch_request.id,
+              "run_type" => run_type,
+              "lane" => lane,
+              "input_text" => input_text,
+              "input_url" => input_url,
+              "objective" => objective,
+              "rendered_message" => rendered_message,
+              "output_paths" => template.expected_output_paths,
+              "status" => if(status == "ready", do: "ready", else: "draft")
+            }
+
+            with {:ok, research_run} <- insert_research_run(run_attrs),
+                 {:ok, sent_message} <-
+                   insert_sent_message(%{
+                     "demand_research_run_id" => research_run.id,
+                     "message_template_id" => template.id,
+                     "codex_launch_request_id" => launch_request.id,
+                     "target" => template.default_target,
+                     "status" => if(status == "ready", do: "confirmed", else: "draft"),
+                     "rendered_body" => rendered_message,
+                     "edited_body" => edited_body,
+                     "confirmed_at" => if(status == "ready", do: Factory.now(), else: nil)
+                   }) do
+              source_repo
+              |> SourceRepo.changeset(%{"last_run_at" => Factory.now()})
+              |> Repo.update!()
+
+              %{
+                launch_request: launch_request,
+                research_run: research_run,
+                sent_message: sent_message
+              }
+            else
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
+      end)
+      |> case do
+        {:ok, records} -> {:ok, records}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -960,6 +1056,29 @@ defmodule Afp.Factory.Demand do
     |> after_sent_message_write("demand_sent_message_created")
   end
 
+  defp source_template_variables(%SourceRepo{} = source_repo, attrs) do
+    run_type = Factory.trim_nil(attr_value_or_atom(attrs, "run_type"))
+    lane = Factory.trim_nil(attr_value_or_atom(attrs, "lane"))
+    input_text = Factory.trim_nil(attr_value_or_atom(attrs, "input_text"))
+    input_url = Factory.trim_nil(attr_value_or_atom(attrs, "input_url"))
+    objective = Factory.trim_nil(attr_value_or_atom(attrs, "objective"))
+
+    %{
+      "repo_path" => source_repo.repo_path,
+      "source_repo_path" => source_repo.repo_path,
+      "source_display_name" => source_repo.display_name,
+      "agent_entrypoint" => source_repo.agent_entrypoint || "AGENTS.md",
+      "run_type" => run_type,
+      "lane" => lane,
+      "input_text" => input_text,
+      "input_url" => input_url,
+      "objective" => objective,
+      "write_targets" => Jason.encode!(source_repo.write_targets || %{}),
+      "sqlite_path" => source_repo.sqlite_path,
+      "sqlite_allowed_operations" => Enum.join(source_repo.sqlite_allowed_operations || [], "\n")
+    }
+  end
+
   defp candidate_template_variables(%Candidate{} = candidate) do
     source_repo = candidate.source_repo
 
@@ -1000,6 +1119,21 @@ defmodule Afp.Factory.Demand do
   defp template_value(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
   defp template_value(value) when is_binary(value), do: value
   defp template_value(value), do: to_string(value)
+
+  defp source_launch_context(%SourceRepo{} = source_repo, run_type, lane, input_text, input_url) do
+    [
+      "Demand source repo: #{source_repo.repo_path}",
+      "Repo instructions: #{source_repo.agent_entrypoint || "AGENTS.md"}",
+      "Run type: #{run_type}",
+      "Lane: #{lane}",
+      "Input text: #{input_text || "none"}",
+      "Input URL: #{input_url || "none"}",
+      "SQLite path: #{source_repo.sqlite_path || "not declared"}",
+      "Allowed SQLite operations: #{Enum.join(source_repo.sqlite_allowed_operations || [], ", ")}",
+      "Human confirmation is required before sending, package generation, promotion, project repo creation, or implementation launch."
+    ]
+    |> Enum.join("\n")
+  end
 
   defp candidate_launch_context(%Candidate{} = candidate) do
     source_repo = candidate.source_repo

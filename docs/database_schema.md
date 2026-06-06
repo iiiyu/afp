@@ -41,7 +41,7 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `demand_source_repos.repo_path` is unique, preventing duplicate source configuration.
 - `demand_candidates.demand_source_repo_id, lane, external_id` is unique, so AFP can re-index a repo-owned candidate without duplicating it.
 - `demand_candidates.demand_item_id` optionally links an indexed candidate to the AFP demand item created when the operator picks it up.
-- `demand_research_runs` can link to a source repo, candidate, message template, launch request, and Codex session while leaving detailed run artifacts in the source repo.
+- `demand_research_runs` can link to a source repo, optional candidate, message template, launch request, and Codex session while leaving detailed run artifacts in the source repo.
 - `demand_sent_messages` belong to a research run and can link to the launch request/session used to hand off or send the message.
 - `demand_message_templates.name` is unique.
 - Source repo index refresh reads the manifest-declared repo-local SQLite database only when `sqlite.allowed_operations` includes `read_index` or `read_candidates`; imported rows update `demand_candidates` and record a completed `repo_audit` research run.

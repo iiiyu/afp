@@ -223,7 +223,7 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
 - **Today**: focus queue as the primary command surface, with supporting review,
   demand, release, business, repository, and session queues grouped below it.
 - **Demand**: upstream demand-source console first, with configured research
-  repos, scheduled/manual research runs, candidate pickup, product packages,
+  repos, manual idea/URL research handoffs, candidate pickup, product packages,
   launch requests, and promotion into apps kept as human-confirmed action
   layers.
 - **Apps**: portfolio table as the primary read model, with filters and app
