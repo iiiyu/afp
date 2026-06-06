@@ -10,6 +10,14 @@ defmodule Afp.Factory do
   @release_statuses ~w(draft preparing ready_for_review submitted live blocked cancelled)
   @demand_statuses ~w(captured researching validating validated promoted rejected parked)
   @demand_confidences ~w(unknown low medium high)
+  @demand_lanes ~w(app game)
+  @demand_source_health_states ~w(unknown healthy missing not_git manifest_missing invalid_manifest invalid_structure agents_missing sqlite_missing sqlite_invalid skills_unavailable unsupported)
+  @demand_candidate_source_statuses ~w(new researching validation-ready validation-sprint build-ready rejected parked watched packaged superseded)
+  @demand_candidate_afp_statuses ~w(not_picked_up pickup_recommended picked_up package_requested package_ready handoff_ready promoted rejected parked)
+  @demand_research_run_types ~w(scheduled_scan manual_idea manual_url deep_research package_generation repo_audit session_continue)
+  @demand_research_run_statuses ~w(draft ready launched running completed failed cancelled reviewed)
+  @demand_message_targets ~w(new_session existing_session manual_handoff)
+  @demand_sent_message_statuses ~w(draft confirmed sent accepted failed superseded)
   @launch_request_statuses ~w(draft ready launched cancelled)
   @launch_modes ~w(manual_handoff direct_codex)
   @check_statuses ~w(pending passed failed waived not_applicable)
@@ -32,6 +40,14 @@ defmodule Afp.Factory do
   def release_statuses, do: @release_statuses
   def demand_statuses, do: @demand_statuses
   def demand_confidences, do: @demand_confidences
+  def demand_lanes, do: @demand_lanes
+  def demand_source_health_states, do: @demand_source_health_states
+  def demand_candidate_source_statuses, do: @demand_candidate_source_statuses
+  def demand_candidate_afp_statuses, do: @demand_candidate_afp_statuses
+  def demand_research_run_types, do: @demand_research_run_types
+  def demand_research_run_statuses, do: @demand_research_run_statuses
+  def demand_message_targets, do: @demand_message_targets
+  def demand_sent_message_statuses, do: @demand_sent_message_statuses
   def launch_request_statuses, do: @launch_request_statuses
   def launch_modes, do: @launch_modes
   def check_statuses, do: @check_statuses

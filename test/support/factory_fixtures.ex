@@ -11,7 +11,12 @@ defmodule Afp.FactoryFixtures do
   def unique_integer, do: System.unique_integer([:positive])
 
   def unique_repo_path do
-    path = Path.join(System.tmp_dir!(), "afp-test-repo-#{unique_integer()}")
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "afp-test-repo-#{System.os_time(:microsecond)}-#{unique_integer()}"
+      )
+
     File.mkdir_p!(path)
     path
   end
@@ -32,6 +37,109 @@ defmodule Afp.FactoryFixtures do
     {_output, 0} = System.cmd("git", ["add", "."], cd: path, stderr_to_stdout: true)
     {_output, 0} = System.cmd("git", ["commit", "-m", "Initial test commit"], cd: path)
     path
+  end
+
+  def demand_source_repo_fixture(attrs \\ %{}) do
+    path = Map.get(attrs, "repo_path") || Map.get(attrs, :repo_path) || demand_repo_fixture()
+
+    attrs =
+      Map.merge(%{"repo_path" => path}, Map.delete(Map.delete(attrs, "repo_path"), :repo_path))
+
+    {:ok, source_repo} = Demand.create_source_repo(attrs)
+    source_repo
+  end
+
+  def demand_repo_fixture(files \\ %{}) do
+    default_files = %{
+      "AGENTS.md" => "# Demand Repo\n",
+      "demand.sqlite3" => "",
+      "sqlite/schema.sql" => "-- schema\n",
+      "runs/.keep" => "",
+      "candidates/.keep" => "",
+      "evidence/.keep" => "",
+      "reports/.keep" => "",
+      "packages/.keep" => "",
+      "afp-demand-source.json" => """
+      {
+        "schema_version": 2,
+        "kind": "product_demand_repo",
+        "display_name": "Product Demand",
+        "description": "Unified demand research for apps and games.",
+        "lanes": ["app", "game"],
+        "agent_contract": {
+          "entrypoint": "AGENTS.md",
+          "required": true,
+          "skill_policy": "repo_agents_first",
+          "required_skills": [],
+          "optional_skills": []
+        },
+        "read_order": ["AGENTS.md", "README.md", "sqlite/schema.sql"],
+        "write_targets": {
+          "runs": "runs",
+          "candidates": "candidates",
+          "evidence": "evidence",
+          "reports": "reports",
+          "packages": "packages"
+        },
+        "sqlite": {
+          "path": "demand.sqlite3",
+          "mode": "required",
+          "owner": "repo",
+          "schema_path": "sqlite/schema.sql",
+          "migrations_path": "sqlite/migrations",
+          "allowed_operations": ["read_index", "upsert_candidate"]
+        }
+      }
+      """
+    }
+
+    files =
+      Enum.reduce(files, default_files, fn
+        {path, nil}, acc -> Map.delete(acc, path)
+        {path, content}, acc -> Map.put(acc, path, content)
+      end)
+
+    temp_git_repo_fixture(files)
+  end
+
+  def demand_candidate_fixture(source_repo \\ nil, attrs \\ %{}) do
+    source_repo = source_repo || demand_source_repo_fixture()
+
+    defaults = %{
+      "lane" => "app",
+      "external_id" => "candidate-#{unique_integer()}",
+      "title" => "Demand Candidate #{unique_integer()}",
+      "source_status" => "validation-ready",
+      "afp_status" => "pickup_recommended",
+      "score" => 82,
+      "confidence" => "medium",
+      "target_user" => "solo app developer",
+      "demand_signal" => "Repeated source evidence",
+      "incumbent_weakness" => "Existing tools are heavyweight",
+      "wedge_hypothesis" => "A narrow app-factory workflow can win",
+      "validation_action" => "Run a validation sprint",
+      "primary_path" => "candidates/app/candidate.md",
+      "report_path" => "reports/app/candidate-report.md",
+      "evidence_paths" => "evidence/app/source.md"
+    }
+
+    {:ok, candidate} = Demand.index_candidate(source_repo, Map.merge(defaults, attrs))
+    candidate
+  end
+
+  def message_template_fixture(attrs \\ %{}) do
+    defaults = %{
+      "name" => "Manual URL Analysis #{unique_integer()}",
+      "purpose" => "Research a demand candidate",
+      "default_run_type" => "manual_url",
+      "default_lane" => "app",
+      "default_target" => "manual_handoff",
+      "required_variables" => "repo_path\ncandidate_title",
+      "body" => "Follow {{agent_entrypoint}} in {{repo_path}} and research {{candidate_title}}."
+    }
+
+    {:ok, template} = Demand.create_message_template(Map.merge(defaults, attrs))
+    template
   end
 
   def app_fixture(attrs \\ %{}) do

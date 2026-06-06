@@ -9,6 +9,78 @@ defmodule AfpWeb.DemandLiveTest do
   alias Afp.Factory.Demand
   alias Afp.Factory.Portfolio
 
+  test "creates source repo, candidate, template, and candidate handoff", %{conn: conn} do
+    path = demand_repo_fixture()
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#source-repo-form",
+        source_repo: %{
+          repo_path: path,
+          display_name: "Live Demand Source"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Demand source added."
+    source_repo = hd(Demand.list_source_repos())
+
+    html =
+      view
+      |> form("#candidate-form",
+        candidate: %{
+          demand_source_repo_id: source_repo.id,
+          lane: "app",
+          title: "Live Indexed Candidate",
+          source_status: "validation-ready",
+          afp_status: "pickup_recommended",
+          confidence: "medium",
+          validation_action: "Collect three buyer signals"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Demand candidate indexed."
+    candidate = hd(Demand.list_candidates())
+
+    html =
+      view
+      |> form("#message-template-form",
+        message_template: %{
+          name: "Live Candidate Research",
+          purpose: "Research candidate",
+          default_run_type: "manual_idea",
+          default_lane: "app",
+          default_target: "manual_handoff",
+          required_variables: "repo_path\ncandidate_title",
+          body: "Follow {{agent_entrypoint}} in {{repo_path}} for {{candidate_title}}."
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Message template created."
+    template = hd(Demand.list_message_templates())
+
+    html =
+      view
+      |> form("#candidate-launch-form",
+        candidate_launch: %{
+          candidate_id: candidate.id,
+          message_template_id: template.id,
+          risk_level: "normal",
+          status: "ready",
+          edited_body: "Manual handoff from LiveView"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Candidate launch handoff created."
+    assert Enum.any?(Demand.list_launch_requests(), &(&1.source_id == candidate.id))
+    assert Enum.any?(Demand.list_research_runs(), &(&1.demand_candidate_id == candidate.id))
+  end
+
   test "creates a demand item", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/demand")
 

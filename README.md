@@ -162,6 +162,15 @@ flowchart LR
 
 ```mermaid
 erDiagram
+    demand_source_repos ||--o{ demand_candidates : indexes
+    demand_source_repos ||--o{ demand_research_runs : runs
+    demand_candidates ||--o{ demand_research_runs : scopes
+    demand_candidates }o--o| demand_items : picked_up_as
+    demand_message_templates ||--o{ demand_research_runs : renders
+    demand_research_runs ||--o{ demand_sent_messages : records
+    codex_launch_requests ||--o{ demand_research_runs : launches
+    codex_launch_requests ||--o{ demand_sent_messages : handoffs
+
     demand_items ||--o{ codex_launch_requests : requests
     demand_items }o--o| apps : promotes
     apps ||--o{ tickets : owns

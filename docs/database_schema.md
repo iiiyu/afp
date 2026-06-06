@@ -8,6 +8,11 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 
 ## Tables
 
+- `demand_source_repos` - Configured external demand research repositories, manifest contract fields, agent/skill requirements, repo-local SQLite declaration, schedule settings, and source health.
+- `demand_candidates` - Normalized AFP read-model rows for repo-owned app/game opportunities, with separate source status and AFP pickup/package/handoff routing status.
+- `demand_message_templates` - Reusable operator-editable launch/follow-up prompt templates with required variables, safety notes, and expected output paths.
+- `demand_research_runs` - Scheduled or manual research-run metadata linked to source repos, candidates, templates, launch requests, and optional Codex sessions.
+- `demand_sent_messages` - Auditable rendered/edited Codex messages tied to demand research runs and manual handoff or future transport state.
 - `demand_items` - Pre-app opportunities with source evidence, target user/job, demand signal, incumbent weakness, wedge hypothesis, validation action, confidence, and optional promoted app link.
 - `codex_launch_requests` - Human-confirmed launch handoffs linked to demand items, apps, tickets, or release targets, with objective, context, risk, launch mode, status, confirmation, and handoff text.
 - `apps` - Portfolio inventory, lifecycle state, business posture, health state, repository path, product thesis, next action, version/build, and archival fields.
@@ -33,6 +38,12 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `apps.slug` is unique.
 - `apps.repo_path` is unique when present, preventing duplicate repository-backed app records.
 - `demand_items.promoted_app_id` references the app created from validated demand when promotion occurs.
+- `demand_source_repos.repo_path` is unique, preventing duplicate source configuration.
+- `demand_candidates.demand_source_repo_id, lane, external_id` is unique, so AFP can re-index a repo-owned candidate without duplicating it.
+- `demand_candidates.demand_item_id` optionally links an indexed candidate to the AFP demand item created when the operator picks it up.
+- `demand_research_runs` can link to a source repo, candidate, message template, launch request, and Codex session while leaving detailed run artifacts in the source repo.
+- `demand_sent_messages` belong to a research run and can link to the launch request/session used to hand off or send the message.
+- `demand_message_templates.name` is unique.
 - `codex_launch_requests` can point at a demand item, app, ticket, release target, or generic source pair; launch state never implies task success.
 - `codex_sessions.external_session_id` is unique, so duplicate hook events update the same session rather than creating duplicate sessions.
 - `ticket_session_links.ticket_id, codex_session_id` is unique.
@@ -50,6 +61,14 @@ validated in Ecto changesets:
 - App lifecycle: `idea`, `validation_ready`, `validation_sprint`, `build_ready`, `in_build`, `release_ready`, `submitted`, `live`, `iterating`, `maintained`, `paused`, `archived`.
 - Demand status: `captured`, `researching`, `validating`, `validated`, `promoted`, `rejected`, `parked`.
 - Demand confidence: `unknown`, `low`, `medium`, `high`.
+- Demand source health: `unknown`, `healthy`, `missing`, `not_git`, `manifest_missing`, `invalid_manifest`, `invalid_structure`, `agents_missing`, `sqlite_missing`, `sqlite_invalid`, `skills_unavailable`, `unsupported`.
+- Demand lanes: `app`, `game`.
+- Demand candidate source status: `new`, `researching`, `validation-ready`, `validation-sprint`, `build-ready`, `rejected`, `parked`, `watched`, `packaged`, `superseded`.
+- Demand candidate AFP status: `not_picked_up`, `pickup_recommended`, `picked_up`, `package_requested`, `package_ready`, `handoff_ready`, `promoted`, `rejected`, `parked`.
+- Demand research run type: `scheduled_scan`, `manual_idea`, `manual_url`, `deep_research`, `package_generation`, `repo_audit`, `session_continue`.
+- Demand research run status: `draft`, `ready`, `launched`, `running`, `completed`, `failed`, `cancelled`, `reviewed`.
+- Demand message target: `new_session`, `existing_session`, `manual_handoff`.
+- Demand sent message status: `draft`, `confirmed`, `sent`, `accepted`, `failed`, `superseded`.
 - Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.
 - Codex launch mode: `manual_handoff`, `direct_codex`.
 - Business posture: `unknown`, `grow`, `maintain`, `fix`, `harvest`, `pause`, `kill`.

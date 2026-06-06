@@ -8,6 +8,74 @@ defmodule Afp.Factory.DemandTest do
 
   alias Afp.Factory.Demand
 
+  test "create_source_repo reads unified demand repo manifest and health" do
+    source_repo = demand_source_repo_fixture()
+
+    assert source_repo.health_state == "healthy"
+    assert source_repo.kind == "product_demand_repo"
+    assert source_repo.lanes == ["app", "game"]
+    assert source_repo.agent_entrypoint == "AGENTS.md"
+    assert source_repo.sqlite_path == "demand.sqlite3"
+  end
+
+  test "create_source_repo marks required sqlite as missing" do
+    path = demand_repo_fixture(%{"demand.sqlite3" => nil})
+
+    {:ok, source_repo} = Demand.create_source_repo(%{"repo_path" => path})
+
+    assert source_repo.health_state == "sqlite_missing"
+    assert Enum.any?(source_repo.missing_paths, &String.ends_with?(&1, "demand.sqlite3"))
+  end
+
+  test "index_candidate keeps repo source status separate from afp status" do
+    source_repo = demand_source_repo_fixture()
+
+    {:ok, candidate} =
+      Demand.index_candidate(source_repo, %{
+        "lane" => "game",
+        "title" => "Tiny Territory Runner",
+        "source_status" => "validation-ready",
+        "afp_status" => "not_picked_up",
+        "score" => 79,
+        "confidence" => "high"
+      })
+
+    assert candidate.external_id == "tiny-territory-runner"
+    assert candidate.source_status == "validation-ready"
+    assert candidate.afp_status == "not_picked_up"
+    assert candidate.source_repo.id == source_repo.id
+  end
+
+  test "pick_up_candidate creates a linked demand item" do
+    candidate = demand_candidate_fixture()
+
+    assert {:ok, picked_up_candidate, demand_item} = Demand.pick_up_candidate(candidate)
+
+    assert picked_up_candidate.afp_status == "picked_up"
+    assert picked_up_candidate.demand_item_id == demand_item.id
+    assert demand_item.status == "validating"
+    assert demand_item.validation_action == candidate.validation_action
+  end
+
+  test "create_candidate_launch_request renders template and stores run history" do
+    candidate = demand_candidate_fixture()
+    template = message_template_fixture()
+
+    assert {:ok, records} =
+             Demand.create_candidate_launch_request(candidate, template, %{
+               "risk_level" => "normal",
+               "status" => "ready",
+               "edited_body" => "Edited handoff for {{candidate_title}}"
+             })
+
+    assert records.launch_request.source_type == "demand_candidate"
+    assert records.launch_request.source_id == candidate.id
+    assert records.launch_request.handoff_text == "Edited handoff for {{candidate_title}}"
+    assert records.research_run.status == "ready"
+    assert records.research_run.rendered_message =~ candidate.title
+    assert records.sent_message.status == "confirmed"
+  end
+
   test "create_demand_item stores pre-app validation work" do
     {:ok, demand_item} =
       Demand.create_demand_item(%{
