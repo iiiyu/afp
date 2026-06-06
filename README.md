@@ -28,7 +28,7 @@ attach evidence, and decide whether an app or release is allowed to advance.
 - Demand management: pre-app opportunities, source evidence, target user/job,
   validation action, bounded Codex launch requests, and promotion into apps.
 - Demand source repositories: external research repos that keep detailed scans,
-  evidence, candidate reports, product packages, prototype assets, and optional
+  evidence, candidate reports, product packages, prototype assets, and required
   repo-local SQLite data while AFP indexes and routes their state.
 - Execution flow: tickets, review states, blocked reasons, and harness packets
   that describe context, constraints, verification, required evidence, and
@@ -206,7 +206,7 @@ for the Phase 2 scope and verification contract.
 
 See [`docs/demand-repo-control-plane-design.md`](docs/demand-repo-control-plane-design.md)
 for the demand source repository contract, human-in-loop gates, scheduled and
-manual research flows, package handoff, and optional repo-local SQLite boundary.
+manual research flows, package handoff, and required repo-local SQLite boundary.
 
 ## Main Surfaces
 
