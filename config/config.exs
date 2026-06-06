@@ -14,7 +14,13 @@ config :afp,
 config :afp, Oban,
   repo: Afp.Repo,
   queues: [default: 10, intake: 5],
-  plugins: [Oban.Plugins.Pruner]
+  plugins: [
+    Oban.Plugins.Pruner,
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 * * * *", Afp.Factory.Demand.ScheduleResearchWorker}
+     ]}
+  ]
 
 # Configure the endpoint
 config :afp, AfpWeb.Endpoint,

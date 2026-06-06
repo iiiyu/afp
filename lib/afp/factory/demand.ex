@@ -12,6 +12,7 @@ defmodule Afp.Factory.Demand do
   alias Afp.Factory.Demand.DemandItem
   alias Afp.Factory.Demand.MessageTemplate
   alias Afp.Factory.Demand.ResearchRun
+  alias Afp.Factory.Demand.ScheduleResearchWorker
   alias Afp.Factory.Demand.SentMessage
   alias Afp.Factory.Demand.SourceRepo
   alias Afp.Factory.Demand.SourceRepoAdapter
@@ -63,7 +64,9 @@ defmodule Afp.Factory.Demand do
     "lane" => :lane,
     "input_text" => :input_text,
     "input_url" => :input_url,
-    "review_note" => :review_note
+    "review_note" => :review_note,
+    "schedule_enabled" => :schedule_enabled,
+    "schedule_interval_hours" => :schedule_interval_hours
   }
 
   def list_source_repos(params \\ %{}) do
@@ -165,6 +168,49 @@ defmodule Afp.Factory.Demand do
     end
   end
 
+  def list_due_scheduled_source_repos(opts \\ []) do
+    force? = Keyword.get(opts, :force, false)
+    now = Keyword.get(opts, :now, Factory.now())
+
+    SourceRepo
+    |> where([source], source.schedule_enabled == true and source.health_state == "healthy")
+    |> order_by([source], asc: source.last_run_at, asc: source.display_name)
+    |> Repo.all()
+    |> Enum.filter(&scheduled_source_due?(&1, now, force?))
+  end
+
+  def enqueue_scheduled_research(reason \\ "manual_enqueue") do
+    %{"reason" => reason}
+    |> ScheduleResearchWorker.new()
+    |> Oban.insert()
+  end
+
+  def run_scheduled_research(opts \\ []) do
+    sources = list_due_scheduled_source_repos(force: Keyword.get(opts, :force, false))
+    template = ensure_scheduled_scan_template!()
+
+    results =
+      Enum.map(sources, fn source_repo ->
+        create_source_launch_request(source_repo, template, %{
+          "run_type" => "scheduled_scan",
+          "lane" => List.first(source_repo.lanes || ["app"]) || "app",
+          "input_text" => "Scheduled demand scan",
+          "objective" => "Run scheduled market scan for #{source_repo.display_name}.",
+          "risk_level" => "normal",
+          "status" => "draft"
+        })
+      end)
+
+    summary = %{
+      considered: length(sources),
+      created: Enum.count(results, &match?({:ok, _records}, &1)),
+      errors: Enum.count(results, &match?({:error, _reason}, &1)),
+      results: results
+    }
+
+    {:ok, summary}
+  end
+
   def source_repo_inspection_attrs(%SourceRepo{} = source_repo) do
     source_repo
     |> Map.from_struct()
@@ -180,16 +226,23 @@ defmodule Afp.Factory.Demand do
 
   def source_repo_inspection_attrs(attrs) when is_map(attrs) do
     repo_path = attrs |> attr_value_or_atom("repo_path") |> normalize_repo_path()
-    manifest_path = attr_value_or_atom(attrs, "manifest_path") || "afp-demand-source.json"
+
+    manifest_path =
+      Factory.trim_nil(attr_value_or_atom(attrs, "manifest_path")) || "afp-demand-source.json"
+
     now = Factory.now()
 
-    base = %{
-      "repo_path" => repo_path,
-      "display_name" =>
-        attr_value_or_atom(attrs, "display_name") || display_name_from_repo_path(repo_path),
-      "manifest_path" => manifest_path,
-      "latest_scan_at" => now
-    }
+    base =
+      %{
+        "repo_path" => repo_path,
+        "display_name" =>
+          Factory.trim_nil(attr_value_or_atom(attrs, "display_name")) ||
+            display_name_from_repo_path(repo_path),
+        "manifest_path" => manifest_path,
+        "latest_scan_at" => now
+      }
+      |> copy_existing_attr(attrs, "schedule_enabled")
+      |> copy_existing_attr(attrs, "schedule_interval_hours")
 
     cond do
       Factory.blank?(repo_path) ->
@@ -895,6 +948,51 @@ defmodule Afp.Factory.Demand do
   defp ensure_source_indexable(%SourceRepo{} = source_repo),
     do: {:error, {:source_unhealthy, source_repo.health_state}}
 
+  defp scheduled_source_due?(_source_repo, _now, true), do: true
+
+  defp scheduled_source_due?(%SourceRepo{last_run_at: nil}, _now, _force?), do: true
+
+  defp scheduled_source_due?(%SourceRepo{} = source_repo, now, _force?) do
+    due_after_seconds = source_repo.schedule_interval_hours * 60 * 60
+    DateTime.diff(now, source_repo.last_run_at, :second) >= due_after_seconds
+  end
+
+  defp ensure_scheduled_scan_template! do
+    case Repo.get_by(MessageTemplate, name: "Scheduled Demand Scan") do
+      nil ->
+        %MessageTemplate{}
+        |> MessageTemplate.changeset(%{
+          "name" => "Scheduled Demand Scan",
+          "purpose" => "Run scheduled demand discovery and refresh repo artifacts.",
+          "default_run_type" => "scheduled_scan",
+          "default_lane" => "app",
+          "default_target" => "manual_handoff",
+          "required_variables" => ["repo_path", "agent_entrypoint", "lane"],
+          "body" => scheduled_scan_template_body(),
+          "safety_notes" =>
+            "Do not create project repositories, promote candidates, or launch implementation without operator approval.",
+          "expected_output_paths" => ["runs", "candidates", "evidence", "reports"]
+        })
+        |> Repo.insert!()
+
+      template ->
+        template
+    end
+  end
+
+  defp scheduled_scan_template_body do
+    """
+    Follow {{agent_entrypoint}} in {{repo_path}}.
+
+    Run a bounded scheduled_scan for lane {{lane}}.
+    Write artifacts only inside the source repo's configured write targets.
+    Update repo-local SQLite only through declared operations.
+    Summarize durable decisions back to Markdown.
+    Do not create app/game project repositories, promote candidates, or start implementation work.
+    """
+    |> String.trim()
+  end
+
   defp index_candidate_in_transaction(%SourceRepo{} = source_repo, attrs) do
     index_candidate(source_repo, attrs)
   end
@@ -1535,6 +1633,21 @@ defmodule Afp.Factory.Demand do
 
   defp normalize_repo_path(path) when is_binary(path), do: Factory.expand_path(path)
   defp normalize_repo_path(_path), do: nil
+
+  defp copy_existing_attr(target, attrs, key) when is_map(attrs) do
+    cond do
+      Map.has_key?(attrs, key) ->
+        Map.put(target, key, Map.fetch!(attrs, key))
+
+      Map.has_key?(attrs, Map.get(@general_attr_atoms, key)) ->
+        Map.put(target, key, Map.fetch!(attrs, Map.get(@general_attr_atoms, key)))
+
+      true ->
+        target
+    end
+  end
+
+  defp copy_existing_attr(target, _attrs, _key), do: target
 
   defp attr_value_or_atom(attrs, key) when is_map(attrs) do
     Map.get(attrs, key) || Map.get(attrs, Map.get(@general_attr_atoms, key))

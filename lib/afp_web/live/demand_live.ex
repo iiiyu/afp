@@ -79,6 +79,15 @@ defmodule AfpWeb.DemandLive do
     end
   end
 
+  def handle_event("run_scheduled_research", _params, socket) do
+    {:ok, summary} = Demand.run_scheduled_research()
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Scheduled research drafted for #{summary.created} sources.")
+     |> load_demand(socket.assigns.filters)}
+  end
+
   def handle_event("create_candidate", %{"candidate" => params}, socket) do
     if Factory.blank?(params["demand_source_repo_id"]) do
       {:noreply, put_flash(socket, :error, "Choose a source repo first.")}
@@ -422,6 +431,16 @@ defmodule AfpWeb.DemandLive do
               <:subtitle>
                 Configured demand repositories, manifest health, schedule, and repo-local contract state.
               </:subtitle>
+              <:actions>
+                <button
+                  id="scheduled-research-button"
+                  type="button"
+                  phx-click="run_scheduled_research"
+                  class="inline-flex items-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  <.icon name="hero-clock" class="size-3" /> Run due scans
+                </button>
+              </:actions>
 
               <div :if={@source_repos == []}>
                 <.empty_state message="No demand source repos configured." />

@@ -47,6 +47,27 @@ defmodule Afp.Factory.DemandTest do
     assert source_repo.health_summary =~ "Legacy AppIdeas"
   end
 
+  test "run_scheduled_research drafts scan handoffs for due healthy sources" do
+    source_repo =
+      demand_source_repo_fixture(%{
+        "repo_path" => demand_repo_fixture(),
+        "schedule_enabled" => true,
+        "schedule_interval_hours" => 12
+      })
+
+    assert [due_source] = Demand.list_due_scheduled_source_repos()
+    assert due_source.id == source_repo.id
+
+    assert {:ok, summary} = Demand.run_scheduled_research()
+
+    assert summary.created == 1
+    assert [run] = Demand.list_research_runs(%{"run_type" => "scheduled_scan"})
+    assert run.status == "draft"
+    assert run.demand_source_repo_id == source_repo.id
+    assert run.launch_request.status == "draft"
+    assert Demand.get_source_repo!(source_repo.id).last_run_at != nil
+  end
+
   test "refresh_source_repo_index imports candidates from repo-local sqlite" do
     source_repo = demand_source_repo_fixture(%{"repo_path" => sqlite_demand_repo_fixture()})
 

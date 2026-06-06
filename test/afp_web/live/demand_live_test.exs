@@ -63,6 +63,37 @@ defmodule AfpWeb.DemandLiveTest do
     assert hd(Demand.list_source_repos()).health_state == "manifest_missing"
   end
 
+  test "runs due scheduled research from the source panel", %{conn: conn} do
+    path = demand_repo_fixture()
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    view
+    |> form("#source-repo-form",
+      source_repo: %{
+        repo_path: path,
+        display_name: "Scheduled Source",
+        schedule_enabled: "true",
+        schedule_interval_hours: "12"
+      }
+    )
+    |> render_submit()
+
+    source_repo = hd(Demand.list_source_repos())
+    assert source_repo.schedule_enabled
+    assert source_repo.health_state == "healthy"
+    assert [due_source] = Demand.list_due_scheduled_source_repos()
+    assert due_source.id == source_repo.id
+
+    html =
+      view
+      |> element("#scheduled-research-button")
+      |> render_click()
+
+    assert Enum.any?(Demand.list_research_runs(), &(&1.run_type == "scheduled_scan"))
+    assert html =~ "Scheduled research drafted for 1 sources."
+  end
+
   test "creates source repo, candidate, template, and candidate handoff", %{conn: conn} do
     path = demand_repo_fixture()
 
