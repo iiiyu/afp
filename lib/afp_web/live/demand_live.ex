@@ -84,6 +84,29 @@ defmodule AfpWeb.DemandLive do
     end
   end
 
+  def handle_event(
+        "update_source_schedule",
+        %{"source_repo_id" => source_repo_id, "source_schedule" => params},
+        socket
+      ) do
+    source_repo = Demand.get_source_repo!(source_repo_id)
+    schedule_attrs = Map.take(params, ["schedule_enabled", "schedule_interval_hours"])
+
+    case Demand.update_source_repo(source_repo, schedule_attrs) do
+      {:ok, _source_repo} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Source schedule updated.")
+         |> load_demand(socket.assigns.filters)}
+
+      {:error, changeset} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, first_error(changeset) || "Could not update source schedule.")
+         |> load_demand(socket.assigns.filters)}
+    end
+  end
+
   def handle_event("refresh_source_repo", %{"source_repo_id" => source_repo_id}, socket) do
     source_repo = Demand.get_source_repo!(source_repo_id)
 
@@ -528,17 +551,45 @@ defmodule AfpWeb.DemandLive do
                         )["confidence"]} confidence
                       </p>
                     </div>
-                    <.form
-                      for={to_form(%{}, as: :source_refresh)}
-                      id={"source-refresh-#{source_repo.id}"}
-                      phx-submit="refresh_source_repo"
-                      class="shrink-0"
-                    >
-                      <input type="hidden" name="source_repo_id" value={source_repo.id} />
-                      <button class="inline-flex items-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        <.icon name="hero-arrow-path" class="size-3" /> Refresh index
-                      </button>
-                    </.form>
+                    <div class="grid w-full shrink-0 gap-2 md:w-64">
+                      <.form
+                        for={to_form(%{}, as: :source_refresh)}
+                        id={"source-refresh-#{source_repo.id}"}
+                        phx-submit="refresh_source_repo"
+                      >
+                        <input type="hidden" name="source_repo_id" value={source_repo.id} />
+                        <button class="inline-flex w-full items-center justify-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                          <.icon name="hero-arrow-path" class="size-3" /> Refresh index
+                        </button>
+                      </.form>
+
+                      <.form
+                        for={to_form(%{}, as: :source_schedule)}
+                        id={"source-schedule-#{source_repo.id}"}
+                        phx-submit="update_source_schedule"
+                        class="rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950"
+                      >
+                        <input type="hidden" name="source_repo_id" value={source_repo.id} />
+                        <.input
+                          name="source_schedule[schedule_enabled]"
+                          id={"source-schedule-enabled-#{source_repo.id}"}
+                          type="checkbox"
+                          label="Scheduled scans"
+                          checked={source_repo.schedule_enabled}
+                        />
+                        <.input
+                          name="source_schedule[schedule_interval_hours]"
+                          id={"source-schedule-interval-#{source_repo.id}"}
+                          type="number"
+                          label="Interval hours"
+                          value={source_repo.schedule_interval_hours}
+                          min="1"
+                        />
+                        <button class="inline-flex w-full items-center justify-center gap-2 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
+                          <.icon name="hero-calendar-days" class="size-3" /> Update schedule
+                        </button>
+                      </.form>
+                    </div>
                   </div>
                 </article>
               </div>

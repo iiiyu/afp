@@ -87,6 +87,36 @@ defmodule AfpWeb.DemandLiveTest do
     assert hd(Demand.list_source_repos()).health_state == "manifest_missing"
   end
 
+  test "updates an existing source repo schedule", %{conn: conn} do
+    source_repo =
+      demand_source_repo_fixture(%{
+        "repo_path" => demand_repo_fixture(),
+        "schedule_enabled" => false,
+        "schedule_interval_hours" => 12
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> form("#source-schedule-#{source_repo.id}",
+        source_repo_id: source_repo.id,
+        source_schedule: %{
+          schedule_enabled: "true",
+          schedule_interval_hours: "6"
+        }
+      )
+      |> render_submit()
+
+    updated_source = Demand.get_source_repo!(source_repo.id)
+
+    assert html =~ "Source schedule updated."
+    assert updated_source.schedule_enabled
+    assert updated_source.schedule_interval_hours == 6
+    assert [due_source] = Demand.list_due_scheduled_source_repos()
+    assert due_source.id == source_repo.id
+  end
+
   test "runs due scheduled research from the source panel", %{conn: conn} do
     path = demand_repo_fixture()
 
