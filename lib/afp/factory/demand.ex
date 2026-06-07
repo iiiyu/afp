@@ -1214,6 +1214,8 @@ defmodule Afp.Factory.Demand do
   end
 
   defp codex_launch_attrs(%{
+         launch_request: launch_request,
+         research_run: research_run,
          source_repo: source_repo,
          sent_message: sent_message,
          input_text: input_text
@@ -1221,6 +1223,9 @@ defmodule Afp.Factory.Demand do
     %{
       cwd: source_repo.repo_path,
       input_text: input_text,
+      launch_request_id: launch_request.id,
+      research_run_id: research_run.id,
+      source_repo_id: source_repo.id,
       client_user_message_id: sent_message.id,
       approval_policy: "on-request",
       sandbox_mode: "workspace-write",
@@ -1290,10 +1295,13 @@ defmodule Afp.Factory.Demand do
 
   defp persist_codex_launch_started(launch_context) do
     now = Factory.now()
+    launch_attempt_id = launch_attempt_id(launch_context.launch_request.id, now)
 
     payload = %{
       "codex_launch_status" => "started",
-      "started_at" => DateTime.to_iso8601(now)
+      "launch_attempt_id" => launch_attempt_id,
+      "started_at" => DateTime.to_iso8601(now),
+      "latest_progress_at" => DateTime.to_iso8601(now)
     }
 
     Repo.transaction(fn ->
@@ -1302,7 +1310,7 @@ defmodule Afp.Factory.Demand do
         |> CodexLaunchRequest.changeset(%{
           "launch_mode" => "direct_codex",
           "status" => "launched",
-          "launched_at" => launch_context.launch_request.launched_at || now
+          "launched_at" => now
         })
         |> Repo.update!()
 
@@ -1310,7 +1318,7 @@ defmodule Afp.Factory.Demand do
         launch_context.research_run
         |> ResearchRun.changeset(%{
           "status" => "running",
-          "started_at" => launch_context.research_run.started_at || now,
+          "started_at" => now,
           "completed_at" => nil,
           "error" => nil,
           "payload" => payload
@@ -1321,7 +1329,7 @@ defmodule Afp.Factory.Demand do
         launch_context.sent_message
         |> SentMessage.changeset(%{
           "status" => "accepted",
-          "sent_at" => launch_context.sent_message.sent_at || now,
+          "sent_at" => now,
           "failed_at" => nil,
           "payload" => payload
         })
@@ -1340,9 +1348,21 @@ defmodule Afp.Factory.Demand do
       }
     end)
     |> case do
-      {:ok, records} -> {:ok, records}
-      {:error, reason} -> {:error, reason}
+      {:ok, records} ->
+        log_codex_launch_progress("started", launch_context, %{
+          "launch_attempt_id" => launch_attempt_id,
+          "started_at" => DateTime.to_iso8601(now)
+        })
+
+        {:ok, records}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp launch_attempt_id(launch_request_id, now) do
+    "#{launch_request_id}:#{DateTime.to_unix(now, :microsecond)}"
   end
 
   defp persist_codex_launch_progress(launch_request_id, :thread_started, thread_response) do
@@ -1353,64 +1373,82 @@ defmodule Afp.Factory.Demand do
       session_id = thread["sessionId"] || thread["id"]
       model = get_in(thread_response, ["result", "model"])
 
-      if Factory.blank?(session_id) do
-        {:error, :codex_thread_started_without_session_id}
-      else
-        Repo.transaction(fn ->
-          session =
-            upsert_codex_session!(%{
-              "external_session_id" => session_id,
-              "cwd" => thread["cwd"] || launch_context.source_repo.repo_path,
-              "model" => model,
-              "status" => "running",
+      result =
+        if Factory.blank?(session_id) do
+          {:error, :codex_thread_started_without_session_id}
+        else
+          Repo.transaction(fn ->
+            current_run = Repo.get!(ResearchRun, launch_context.research_run.id)
+            current_message = Repo.get!(SentMessage, launch_context.sent_message.id)
+
+            session =
+              upsert_codex_session!(%{
+                "external_session_id" => session_id,
+                "cwd" => thread["cwd"] || launch_context.source_repo.repo_path,
+                "model" => model,
+                "status" => "running",
+                "transcript_path" => thread["path"],
+                "first_seen_at" => now,
+                "last_seen_at" => now,
+                "stopped_at" => nil
+              })
+
+            progress_payload = %{
+              "codex_launch_status" => "thread_started",
+              "thread_id" => thread["id"],
+              "session_id" => session_id,
               "transcript_path" => thread["path"],
-              "first_seen_at" => now,
-              "last_seen_at" => now,
-              "stopped_at" => nil
-            })
+              "model" => model,
+              "latest_progress_at" => DateTime.to_iso8601(now)
+            }
 
-          progress_payload = %{
-            "codex_launch_status" => "thread_started",
-            "thread_id" => thread["id"],
-            "session_id" => session_id,
-            "transcript_path" => thread["path"],
-            "model" => model,
-            "latest_progress_at" => DateTime.to_iso8601(now)
-          }
+            run_attrs =
+              %{
+                "codex_session_id" => session.id,
+                "payload" => merge_payload(current_run.payload, progress_payload)
+              }
+              |> maybe_running_progress_attrs(current_run)
 
-          research_run =
-            launch_context.research_run
-            |> ResearchRun.changeset(%{
+            research_run =
+              current_run
+              |> ResearchRun.changeset(run_attrs)
+              |> Repo.update!()
+
+            current_message
+            |> SentMessage.changeset(%{
               "codex_session_id" => session.id,
-              "payload" => merge_payload(launch_context.research_run.payload, progress_payload)
+              "payload" => merge_payload(current_message.payload, progress_payload)
             })
             |> Repo.update!()
 
-          launch_context.sent_message
-          |> SentMessage.changeset(%{
-            "codex_session_id" => session.id,
-            "payload" => merge_payload(launch_context.sent_message.payload, progress_payload)
-          })
-          |> Repo.update!()
+            Events.record_event(
+              "codex_launch_request",
+              launch_context.launch_request.id,
+              "launch_request_thread_started",
+              %{
+                codex_session_id: session.id,
+                session_id: session_id,
+                research_run_id: research_run.id
+              }
+            )
 
-          Events.record_event(
-            "codex_launch_request",
-            launch_context.launch_request.id,
-            "launch_request_thread_started",
-            %{
-              codex_session_id: session.id,
-              session_id: session_id,
-              research_run_id: research_run.id
-            }
-          )
-
-          :ok
-        end)
-        |> case do
-          {:ok, :ok} -> :ok
-          {:error, reason} -> {:error, reason}
+            :ok
+          end)
+          |> case do
+            {:ok, :ok} -> :ok
+            {:error, reason} -> {:error, reason}
+          end
         end
+
+      if result == :ok do
+        log_codex_launch_progress("thread_started", launch_context, %{
+          "thread_id" => thread["id"],
+          "session_id" => session_id,
+          "transcript_path" => thread["path"]
+        })
       end
+
+      result
     end
   end
 
@@ -1420,56 +1458,73 @@ defmodule Afp.Factory.Demand do
     with {:ok, launch_context} <- codex_launch_context(get_launch_request!(launch_request_id)) do
       turn = get_in(turn_response, ["result", "turn"]) || %{}
 
-      Repo.transaction(fn ->
-        session =
-          case launch_context.research_run.codex_session_id do
-            nil -> nil
-            session_id -> Repo.get(CodexSession, session_id)
+      result =
+        Repo.transaction(fn ->
+          current_run = Repo.get!(ResearchRun, launch_context.research_run.id)
+          current_message = Repo.get!(SentMessage, launch_context.sent_message.id)
+
+          session =
+            case current_run.codex_session_id do
+              nil -> nil
+              session_id -> Repo.get(CodexSession, session_id)
+            end
+
+          if session do
+            session
+            |> CodexSession.changeset(%{
+              "latest_turn_id" => turn["id"],
+              "status" => "running",
+              "last_seen_at" => now,
+              "stopped_at" => nil
+            })
+            |> Repo.update!()
           end
 
-        if session do
-          session
-          |> CodexSession.changeset(%{
-            "latest_turn_id" => turn["id"],
-            "status" => "running",
-            "last_seen_at" => now,
-            "stopped_at" => nil
+          progress_payload = %{
+            "codex_launch_status" => "turn_started",
+            "turn_id" => turn["id"],
+            "turn_status" => turn["status"],
+            "latest_progress_at" => DateTime.to_iso8601(now)
+          }
+
+          run_attrs =
+            %{
+              "payload" => merge_payload(current_run.payload, progress_payload)
+            }
+            |> maybe_running_progress_attrs(current_run)
+
+          current_run
+          |> ResearchRun.changeset(run_attrs)
+          |> Repo.update!()
+
+          current_message
+          |> SentMessage.changeset(%{
+            "payload" => merge_payload(current_message.payload, progress_payload)
           })
           |> Repo.update!()
+
+          Events.record_event(
+            "codex_launch_request",
+            launch_context.launch_request.id,
+            "launch_request_turn_started",
+            %{turn_id: turn["id"], turn_status: turn["status"]}
+          )
+
+          :ok
+        end)
+        |> case do
+          {:ok, :ok} -> :ok
+          {:error, reason} -> {:error, reason}
         end
 
-        progress_payload = %{
-          "codex_launch_status" => "turn_started",
+      if result == :ok do
+        log_codex_launch_progress("turn_started", launch_context, %{
           "turn_id" => turn["id"],
-          "turn_status" => turn["status"],
-          "latest_progress_at" => DateTime.to_iso8601(now)
-        }
-
-        launch_context.research_run
-        |> ResearchRun.changeset(%{
-          "payload" => merge_payload(launch_context.research_run.payload, progress_payload)
+          "turn_status" => turn["status"]
         })
-        |> Repo.update!()
-
-        launch_context.sent_message
-        |> SentMessage.changeset(%{
-          "payload" => merge_payload(launch_context.sent_message.payload, progress_payload)
-        })
-        |> Repo.update!()
-
-        Events.record_event(
-          "codex_launch_request",
-          launch_context.launch_request.id,
-          "launch_request_turn_started",
-          %{turn_id: turn["id"], turn_status: turn["status"]}
-        )
-
-        :ok
-      end)
-      |> case do
-        {:ok, :ok} -> :ok
-        {:error, reason} -> {:error, reason}
       end
+
+      result
     end
   end
 
@@ -1477,6 +1532,25 @@ defmodule Afp.Factory.Demand do
 
   defp merge_payload(payload, updates) when is_map(payload), do: Map.merge(payload, updates)
   defp merge_payload(_payload, updates), do: updates
+
+  defp maybe_running_progress_attrs(attrs, %ResearchRun{} = run) do
+    if run.status == "running" or stale_startup_failure?(run) do
+      Map.merge(attrs, %{
+        "status" => "running",
+        "completed_at" => nil,
+        "error" => nil
+      })
+    else
+      attrs
+    end
+  end
+
+  defp stale_startup_failure?(%ResearchRun{status: "failed", payload: payload, error: error}) do
+    payload_value(payload || %{}, "codex_launch_status") == "stale_startup_failed" or
+      (is_binary(error) and String.contains?(error, "without thread metadata"))
+  end
+
+  defp stale_startup_failure?(_run), do: false
 
   defp persist_codex_launch_worker_start_failure(launch_context, reason) do
     now = Factory.now()
@@ -1526,10 +1600,12 @@ defmodule Afp.Factory.Demand do
   defp persist_codex_launch_success(launch_context, codex_result) do
     now = Factory.now()
     session_attrs = codex_session_attrs(launch_context, codex_result, now)
-    payload = codex_launch_payload(codex_result)
-    started_at = launch_context.research_run.started_at || now
 
     Repo.transaction(fn ->
+      current_run = Repo.get!(ResearchRun, launch_context.research_run.id)
+      current_message = Repo.get!(SentMessage, launch_context.sent_message.id)
+      payload = merge_payload(current_run.payload, codex_launch_payload(codex_result, now))
+      started_at = current_run.started_at || now
       session = upsert_codex_session!(session_attrs)
 
       launch_request =
@@ -1542,7 +1618,7 @@ defmodule Afp.Factory.Demand do
         |> Repo.update!()
 
       research_run =
-        launch_context.research_run
+        current_run
         |> ResearchRun.changeset(%{
           "codex_session_id" => session.id,
           "status" => "completed",
@@ -1554,7 +1630,7 @@ defmodule Afp.Factory.Demand do
         |> Repo.update!()
 
       sent_message =
-        launch_context.sent_message
+        current_message
         |> SentMessage.changeset(%{
           "codex_session_id" => session.id,
           "status" => "sent",
@@ -1593,6 +1669,8 @@ defmodule Afp.Factory.Demand do
 
     Repo.transaction(fn ->
       current_run = Repo.get!(ResearchRun, launch_context.research_run.id)
+      current_message = Repo.get!(SentMessage, launch_context.sent_message.id)
+      failure_payload = codex_failure_payload(reason, error_text)
 
       launch_request =
         launch_context.launch_request
@@ -1623,25 +1701,15 @@ defmodule Afp.Factory.Demand do
         "status" => "failed",
         "error" => error_text,
         "completed_at" => now,
-        "payload" =>
-          merge_payload(current_run.payload, %{
-            "codex_launch_status" => "failed",
-            "codex_error" => error_text
-          })
+        "payload" => merge_payload(current_run.payload, failure_payload)
       })
       |> Repo.update!()
 
-      current_message = Repo.get!(SentMessage, launch_context.sent_message.id)
-
-      launch_context.sent_message
+      current_message
       |> SentMessage.changeset(%{
         "status" => "failed",
         "failed_at" => now,
-        "payload" =>
-          merge_payload(current_message.payload, %{
-            "codex_launch_status" => "failed",
-            "codex_error" => error_text
-          })
+        "payload" => merge_payload(current_message.payload, failure_payload)
       })
       |> Repo.update!()
 
@@ -1674,17 +1742,20 @@ defmodule Afp.Factory.Demand do
     }
   end
 
-  defp codex_launch_payload(codex_result) do
+  defp codex_launch_payload(codex_result, now) do
     thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
     completed_turn = get_in(codex_result, [:turn_completed, "params", "turn"]) || %{}
     server_request_responses = Map.get(codex_result, :server_request_responses, [])
 
     %{
+      "codex_launch_status" => "completed",
       "thread_id" => thread["id"],
       "session_id" => thread["sessionId"] || thread["id"],
       "turn_id" => turn["id"] || completed_turn["id"],
       "turn_status" => completed_turn["status"],
+      "completed_at" => DateTime.to_iso8601(now),
+      "latest_progress_at" => DateTime.to_iso8601(now),
       "final_answer" => Map.get(codex_result, :final_answer),
       "event_count" => length(Map.get(codex_result, :notifications, [])),
       "server_request_count" => length(server_request_responses),
@@ -1696,6 +1767,30 @@ defmodule Afp.Factory.Demand do
     }
   end
 
+  defp codex_failure_payload(reason, error_text) do
+    payload = %{
+      "codex_launch_status" => "failed",
+      "codex_error" => error_text,
+      "failed_at" => DateTime.to_iso8601(Factory.now())
+    }
+
+    case codex_failure_diagnostics(reason) do
+      nil -> payload
+      diagnostics -> Map.put(payload, "codex_failure_diagnostics", diagnostics)
+    end
+  end
+
+  defp codex_failure_diagnostics({_reason, diagnostics}) when is_map(diagnostics), do: diagnostics
+
+  defp codex_failure_diagnostics({_reason, _detail, diagnostics}) when is_map(diagnostics),
+    do: diagnostics
+
+  defp codex_failure_diagnostics({_reason, _detail, _extra, diagnostics})
+       when is_map(diagnostics),
+       do: diagnostics
+
+  defp codex_failure_diagnostics(_reason), do: nil
+
   defp log_codex_launch_failure(message, launch_context, error_text) do
     metadata = %{
       launch_request_id: launch_context.launch_request.id,
@@ -1706,6 +1801,20 @@ defmodule Afp.Factory.Demand do
 
     Logger.error("#{message}: #{inspect(metadata)}")
     IO.puts(:stdio, "[error] #{message}: #{inspect(metadata)}")
+  end
+
+  defp log_codex_launch_progress(event, launch_context, metadata) do
+    payload =
+      metadata
+      |> Map.merge(%{
+        "event" => event,
+        "launch_request_id" => launch_context.launch_request.id,
+        "research_run_id" => launch_context.research_run.id,
+        "sent_message_id" => launch_context.sent_message.id
+      })
+
+    Logger.info("Codex launch progress: #{inspect(payload)}")
+    IO.puts(:stdio, "[codex-launch] progress #{inspect(payload)}")
   end
 
   defp upsert_codex_session!(attrs) do
@@ -1737,7 +1846,7 @@ defmodule Afp.Factory.Demand do
   end
 
   defp old_enough_for_stale_startup?(%ResearchRun{} = run, cutoff) do
-    timestamp = run.started_at || run.updated_at
+    timestamp = payload_started_at(run.payload || %{}) || run.updated_at
 
     if timestamp do
       DateTime.compare(timestamp, cutoff) in [:lt, :eq]
@@ -1745,6 +1854,21 @@ defmodule Afp.Factory.Demand do
       false
     end
   end
+
+  defp payload_started_at(payload) when is_map(payload) do
+    case payload_value(payload, "started_at") do
+      value when is_binary(value) ->
+        case DateTime.from_iso8601(value) do
+          {:ok, datetime, _offset} -> datetime
+          {:error, _reason} -> nil
+        end
+
+      _value ->
+        nil
+    end
+  end
+
+  defp payload_started_at(_payload), do: nil
 
   defp mark_stale_codex_startup_failed(%ResearchRun{} = run, now, startup_grace_ms) do
     error_text =

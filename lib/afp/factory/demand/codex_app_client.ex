@@ -23,6 +23,7 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     "item/fileChange/requestApproval"
   ]
   @legacy_approval_methods ["applyPatchApproval", "execCommandApproval"]
+  @approval_request_methods @modern_approval_methods ++ @legacy_approval_methods
   @sqlite_write_operations [
     "upsert_research_run",
     "upsert_candidate",
@@ -50,37 +51,76 @@ defmodule Afp.Factory.Demand.CodexAppClient do
   def launch_new_turn(attrs, opts \\ []) when is_map(attrs) do
     timeout_ms = Keyword.get(opts, :timeout_ms, default_timeout_ms())
 
+    log_transport("launch_start", launch_summary(attrs, timeout_ms))
+
     case open_port(opts) do
       {:ok, port} ->
-        try do
-          conn = new_conn(port, attrs, opts)
+        result =
+          try do
+            conn = new_conn(port, attrs, opts)
 
-          with {:ok, conn, initialize_response} <- initialize(conn, timeout_ms),
-               {:ok, conn, thread_response} <- start_thread(conn, attrs, timeout_ms),
-               {:ok, conn, turn_response} <- start_turn(conn, attrs, thread_response, timeout_ms),
-               {:ok, conn, turn_completed} <-
-                 await_turn_completed(conn, turn_id(turn_response), timeout_ms) do
-            {:ok,
-             %{
-               initialize_response: initialize_response,
-               thread_response: thread_response,
-               turn_response: turn_response,
-               turn_completed: turn_completed,
-               notifications: conn.events,
-               server_request_responses: conn.server_request_responses,
-               final_answer: final_answer(conn.events)
-             }}
-          else
-            {:error, reason} -> {:error, reason}
+            with {:ok, conn, initialize_response} <- initialize(conn, timeout_ms),
+                 {:ok, conn, thread_response} <- start_thread(conn, attrs, timeout_ms),
+                 {:ok, conn, turn_response} <-
+                   start_turn(conn, attrs, thread_response, timeout_ms),
+                 {:ok, conn, turn_completed} <-
+                   await_turn_completed(conn, turn_id(turn_response), timeout_ms) do
+              {:ok,
+               %{
+                 initialize_response: initialize_response,
+                 thread_response: thread_response,
+                 turn_response: turn_response,
+                 turn_completed: turn_completed,
+                 notifications: conn.events,
+                 server_request_responses: conn.server_request_responses,
+                 final_answer: final_answer(conn.events)
+               }}
+            else
+              {:error, reason} -> {:error, reason}
+            end
+          after
+            close_port(port)
           end
-        after
-          close_port(port)
-        end
+
+        log_launch_result(result)
+        result
 
       {:error, reason} ->
+        log_transport("launch_error", %{"reason" => inspect(reason)})
         {:error, reason}
     end
   end
+
+  defp launch_summary(attrs, timeout_ms) do
+    sandbox_policy = Map.get(attrs, :sandbox_policy) || %{}
+    writable_roots = Map.get(sandbox_policy, "writableRoots") || []
+
+    %{
+      "cwd" => Map.get(attrs, :cwd),
+      "launch_request_id" => Map.get(attrs, :launch_request_id),
+      "research_run_id" => Map.get(attrs, :research_run_id),
+      "client_user_message_id" => Map.get(attrs, :client_user_message_id),
+      "timeout_ms" => timeout_ms,
+      "sandbox" => Map.get(attrs, :sandbox_mode, "workspace-write"),
+      "network_access" => Map.get(attrs, :network_access, true),
+      "writable_root_count" => length(writable_roots)
+    }
+  end
+
+  defp log_launch_result({:ok, result}) do
+    log_transport("launch_completed", %{
+      "event_count" => length(Map.get(result, :notifications, [])),
+      "server_request_count" => length(Map.get(result, :server_request_responses, [])),
+      "turn_id" => get_in(result, [:turn_response, "result", "turn", "id"]),
+      "turn_status" => get_in(result, [:turn_completed, "params", "turn", "status"])
+    })
+  end
+
+  defp log_launch_result({:error, reason}) do
+    log_transport("launch_error", %{"reason" => inspect(reason)})
+  end
+
+  defp log_launch_result(_result), do: :ok
 
   defp new_conn(port, attrs, opts) do
     %{
@@ -171,7 +211,9 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     timeout = max(deadline - System.monotonic_time(:millisecond), 0)
 
     if timeout == 0 do
-      {:error, :codex_turn_timeout}
+      reason = {:codex_turn_timeout, diagnostics(conn, %{"turn_id" => turn_id})}
+      log_transport("turn_timeout", elem(reason, 1))
+      {:error, reason}
     else
       receive do
         {port, {:data, chunk}} when port == conn.port ->
@@ -181,10 +223,14 @@ defmodule Afp.Factory.Demand.CodexAppClient do
           end
 
         {port, {:exit_status, status}} when port == conn.port ->
-          {:error, {:codex_app_server_exited, status}}
+          reason = {:codex_app_server_exited, status, diagnostics(conn, %{"turn_id" => turn_id})}
+          log_transport("port_exit", %{"status" => status, "turn_id" => turn_id})
+          {:error, reason}
       after
         timeout ->
-          {:error, :codex_turn_timeout}
+          reason = {:codex_turn_timeout, diagnostics(conn, %{"turn_id" => turn_id})}
+          log_transport("turn_timeout", elem(reason, 1))
+          {:error, reason}
       end
     end
   end
@@ -200,22 +246,35 @@ defmodule Afp.Factory.Demand.CodexAppClient do
         {:ok, conn, latest_completion}
 
       %{"method" => "turn/completed", "params" => %{"turn" => %{"status" => status}}} ->
-        {:error, {:codex_turn_incomplete, status}}
+        {:error, {:codex_turn_incomplete, status, diagnostics(conn, %{"turn_id" => turn_id})}}
 
       %{"method" => "turn/aborted"} ->
-        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
+        {:error,
+         {:codex_turn_aborted, terminal_reason(latest_completion),
+          diagnostics(conn, %{"turn_id" => turn_id})}}
 
       %{"method" => "turn/failed"} ->
-        {:error, {:codex_turn_failed, terminal_reason(latest_completion)}}
+        {:error,
+         {:codex_turn_failed, terminal_reason(latest_completion),
+          diagnostics(conn, %{"turn_id" => turn_id})}}
 
       %{"type" => "event_msg", "payload" => %{"type" => "turn_aborted"}} ->
-        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
+        {:error,
+         {:codex_turn_aborted, terminal_reason(latest_completion),
+          diagnostics(conn, %{"turn_id" => turn_id})}}
 
       %{"type" => "turn_aborted"} ->
-        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
+        {:error,
+         {:codex_turn_aborted, terminal_reason(latest_completion),
+          diagnostics(conn, %{"turn_id" => turn_id})}}
 
       _completion ->
-        {:error, :codex_turn_completion_unrecognized}
+        {:error,
+         {:codex_turn_completion_unrecognized,
+          diagnostics(conn, %{
+            "turn_id" => turn_id,
+            "terminal_event" => event_summary(latest_completion)
+          })}}
     end
   end
 
@@ -228,7 +287,9 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     timeout = max(deadline - System.monotonic_time(:millisecond), 0)
 
     if timeout == 0 do
-      {:error, {:codex_response_timeout, request_id}}
+      reason = {:codex_response_timeout, request_id, diagnostics(conn)}
+      log_transport("response_timeout", %{"request_id" => request_id})
+      {:error, reason}
     else
       receive do
         {port, {:data, chunk}} when port == conn.port ->
@@ -245,10 +306,16 @@ defmodule Afp.Factory.Demand.CodexAppClient do
           end
 
         {port, {:exit_status, status}} when port == conn.port ->
-          {:error, {:codex_app_server_exited, status}}
+          reason =
+            {:codex_app_server_exited, status, diagnostics(conn, %{"request_id" => request_id})}
+
+          log_transport("port_exit", %{"status" => status, "request_id" => request_id})
+          {:error, reason}
       after
         timeout ->
-          {:error, {:codex_response_timeout, request_id}}
+          reason = {:codex_response_timeout, request_id, diagnostics(conn)}
+          log_transport("response_timeout", %{"request_id" => request_id})
+          {:error, reason}
       end
     end
   end
@@ -261,6 +328,12 @@ defmodule Afp.Factory.Demand.CodexAppClient do
 
   defp notify_launch_event(%{launch_event_handler: handler} = conn, event, payload)
        when is_function(handler, 2) do
+    log_transport("progress_callback", %{
+      "event" => event,
+      "thread_id" => get_in(payload, ["result", "thread", "id"]),
+      "turn_id" => get_in(payload, ["result", "turn", "id"])
+    })
+
     case handler.(event, payload) do
       :ok -> {:ok, conn}
       {:ok, _result} -> {:ok, conn}
@@ -272,7 +345,15 @@ defmodule Afp.Factory.Demand.CodexAppClient do
       {:error, {:codex_launch_progress_failed, event, {kind, reason}}}
   end
 
-  defp notify_launch_event(conn, _event, _payload), do: {:ok, conn}
+  defp notify_launch_event(conn, event, payload) do
+    log_transport("progress_callback_skipped", %{
+      "event" => event,
+      "thread_id" => get_in(payload, ["result", "thread", "id"]),
+      "turn_id" => get_in(payload, ["result", "turn", "id"])
+    })
+
+    {:ok, conn}
+  end
 
   defp handle_chunk(conn, chunk) do
     text = conn.buffer <> chunk
@@ -280,8 +361,10 @@ defmodule Afp.Factory.Demand.CodexAppClient do
 
     events =
       lines
-      |> Enum.map(&decode_line/1)
-      |> Enum.reject(&is_nil/1)
+      |> Enum.flat_map(&decode_line/1)
+      |> tap(fn decoded_events ->
+        Enum.each(decoded_events, &log_transport("recv", event_summary(&1)))
+      end)
 
     %{conn | buffer: buffer, events: conn.events ++ events}
   end
@@ -336,6 +419,165 @@ defmodule Afp.Factory.Demand.CodexAppClient do
       Map.get(event, "reason") ||
       "unknown"
   end
+
+  defp diagnostics(conn, extra \\ %{}) do
+    responses = conn.server_request_responses || []
+
+    %{
+      "event_count" => length(conn.events),
+      "handled_server_request_count" => MapSet.size(conn.handled_server_request_ids),
+      "server_request_count" => length(responses),
+      "server_request_methods" =>
+        responses
+        |> Enum.map(&Map.get(&1, "method"))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq(),
+      "last_event" => conn.events |> List.last() |> event_summary(),
+      "buffer_bytes" => byte_size(conn.buffer || "")
+    }
+    |> Map.merge(extra)
+  end
+
+  defp event_summary(nil), do: nil
+
+  defp event_summary(%{"id" => id, "method" => method, "params" => params}) do
+    %{
+      "kind" => "request",
+      "id" => id,
+      "method" => method
+    }
+    |> Map.merge(params_summary(method, params))
+  end
+
+  defp event_summary(%{"id" => id, "result" => result}) do
+    %{
+      "kind" => "response",
+      "id" => id,
+      "result_keys" => map_keys(result)
+    }
+    |> Map.merge(result_summary(result))
+  end
+
+  defp event_summary(%{"id" => id, "error" => error}) do
+    %{
+      "kind" => "error_response",
+      "id" => id,
+      "error" => inspect(error)
+    }
+  end
+
+  defp event_summary(%{"method" => method, "params" => params}) do
+    %{"kind" => "notification", "method" => method}
+    |> Map.merge(params_summary(method, params))
+  end
+
+  defp event_summary(%{"method" => method}) do
+    %{"kind" => "notification", "method" => method}
+  end
+
+  defp event_summary(%{"type" => type, "payload" => payload}) do
+    %{
+      "kind" => "event_msg",
+      "type" => type,
+      "payload_type" => Map.get(payload || %{}, "type"),
+      "turn_id" => Map.get(payload || %{}, "turn_id")
+    }
+  end
+
+  defp event_summary(event) when is_map(event) do
+    %{"kind" => "unknown_map", "keys" => map_keys(event)}
+  end
+
+  defp event_summary(event), do: %{"kind" => "unknown", "value" => inspect(event)}
+
+  defp params_summary("thread/start", params) when is_map(params) do
+    %{
+      "cwd" => Map.get(params, "cwd"),
+      "model" => Map.get(params, "model"),
+      "sandbox" => Map.get(params, "sandbox"),
+      "approval_policy" => Map.get(params, "approvalPolicy")
+    }
+  end
+
+  defp params_summary("turn/start", params) when is_map(params) do
+    sandbox_policy = Map.get(params, "sandboxPolicy") || %{}
+    writable_roots = Map.get(sandbox_policy, "writableRoots") || []
+
+    %{
+      "thread_id" => Map.get(params, "threadId"),
+      "cwd" => Map.get(params, "cwd"),
+      "approval_policy" => Map.get(params, "approvalPolicy"),
+      "input_count" => length(Map.get(params, "input") || []),
+      "writable_root_count" => length(writable_roots),
+      "network_access" => Map.get(sandbox_policy, "networkAccess")
+    }
+  end
+
+  defp params_summary("turn/completed", params) when is_map(params) do
+    turn = Map.get(params, "turn") || %{}
+
+    %{
+      "turn_id" => Map.get(turn, "id"),
+      "turn_status" => Map.get(turn, "status")
+    }
+  end
+
+  defp params_summary("item/completed", params) when is_map(params) do
+    item = Map.get(params, "item") || %{}
+
+    %{
+      "item_id" => Map.get(item, "id"),
+      "item_type" => Map.get(item, "type"),
+      "phase" => Map.get(item, "phase"),
+      "status" => Map.get(item, "status")
+    }
+  end
+
+  defp params_summary(method, params)
+       when method in @approval_request_methods and is_map(params) do
+    %{
+      "cwd" => Map.get(params, "cwd"),
+      "grant_root" => Map.get(params, "grantRoot"),
+      "command" => Map.get(params, "command"),
+      "reason" => Map.get(params, "reason"),
+      "network_requested" => match?(%{}, Map.get(params, "networkApprovalContext"))
+    }
+  end
+
+  defp params_summary("item/permissions/requestApproval", params) when is_map(params) do
+    requested = Map.get(params, "permissions") || %{}
+
+    %{
+      "network_requested" => get_in(requested, ["network", "enabled"]) == true,
+      "permission_keys" => map_keys(requested)
+    }
+  end
+
+  defp params_summary(_method, params) when is_map(params),
+    do: %{"param_keys" => map_keys(params)}
+
+  defp params_summary(_method, _params), do: %{}
+
+  defp result_summary(%{"thread" => thread} = result) when is_map(thread) do
+    %{
+      "thread_id" => Map.get(thread, "id"),
+      "session_id" => Map.get(thread, "sessionId"),
+      "model" => Map.get(result, "model"),
+      "transcript_path" => Map.get(thread, "path")
+    }
+  end
+
+  defp result_summary(%{"turn" => turn}) when is_map(turn) do
+    %{
+      "turn_id" => Map.get(turn, "id"),
+      "turn_status" => Map.get(turn, "status")
+    }
+  end
+
+  defp result_summary(_result), do: %{}
+
+  defp map_keys(value) when is_map(value), do: value |> Map.keys() |> Enum.sort()
+  defp map_keys(_value), do: []
 
   defp respond_to_server_requests(conn) do
     Enum.reduce_while(conn.events, {:ok, conn}, fn event, {:ok, acc} ->
@@ -882,10 +1124,12 @@ defmodule Afp.Factory.Demand.CodexAppClient do
 
   defp send_message(port, message) do
     payload = Jason.encode!(message) <> "\n"
+    log_transport("send", event_summary(message))
 
     if Port.command(port, payload) do
       :ok
     else
+      log_transport("send_failed", event_summary(message))
       {:error, :codex_port_closed}
     end
   end
@@ -894,15 +1138,23 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     line
     |> String.trim()
     |> case do
-      "" -> nil
+      "" -> []
       trimmed -> decode_json(trimmed)
     end
   end
 
   defp decode_json(line) do
     case Jason.decode(line) do
-      {:ok, value} -> value
-      {:error, _reason} -> nil
+      {:ok, value} ->
+        [value]
+
+      {:error, reason} ->
+        log_transport("decode_error", %{
+          "reason" => inspect(reason),
+          "line" => trim_log_string(line, 500)
+        })
+
+        []
     end
   end
 
@@ -928,4 +1180,39 @@ defmodule Afp.Factory.Demand.CodexAppClient do
   defp default_timeout_ms do
     Application.get_env(:afp, :codex_app_task_timeout_ms, 10_800_000)
   end
+
+  defp log_transport(event, metadata) when is_map(metadata) do
+    console_message = "[codex-app-server] #{event} #{format_metadata(metadata)}"
+    IO.puts(:stdio, console_message)
+  end
+
+  defp log_transport(event, metadata), do: log_transport(event, %{"value" => inspect(metadata)})
+
+  defp format_metadata(metadata) do
+    metadata
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Enum.sort_by(fn {key, _value} -> to_string(key) end)
+    |> Enum.map_join(" ", fn {key, value} -> "#{key}=#{format_log_value(value)}" end)
+  end
+
+  defp format_log_value(value) when is_binary(value) do
+    value
+    |> trim_log_string(240)
+    |> inspect()
+  end
+
+  defp format_log_value(value) when is_atom(value), do: inspect(value)
+  defp format_log_value(value) when is_integer(value), do: Integer.to_string(value)
+  defp format_log_value(value) when is_boolean(value), do: to_string(value)
+  defp format_log_value(value), do: value |> inspect() |> trim_log_string(240)
+
+  defp trim_log_string(value, max_length) when is_binary(value) do
+    if String.length(value) > max_length do
+      String.slice(value, 0, max_length) <> "...[truncated]"
+    else
+      value
+    end
+  end
+
+  defp trim_log_string(value, _max_length), do: inspect(value)
 end

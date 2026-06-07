@@ -513,6 +513,59 @@ defmodule Afp.Factory.DemandTest do
     assert sent_message.status == "failed"
   end
 
+  test "stale startup reconciliation uses the current launch payload timestamp" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    now = DateTime.utc_now()
+    old_started_at = DateTime.add(now, -900, :second)
+
+    records.launch_request
+    |> CodexLaunchRequest.changeset(%{
+      "launch_mode" => "direct_codex",
+      "status" => "launched",
+      "launched_at" => now
+    })
+    |> Repo.update!()
+
+    records.research_run
+    |> ResearchRun.changeset(%{
+      "status" => "running",
+      "started_at" => old_started_at,
+      "payload" => %{
+        "codex_launch_status" => "started",
+        "launch_attempt_id" => "#{records.launch_request.id}:fresh",
+        "started_at" => DateTime.to_iso8601(now)
+      }
+    })
+    |> Repo.update!()
+
+    assert [] =
+             Demand.reconcile_stale_running_research_runs(
+               now: now,
+               startup_grace_ms: 600_000
+             )
+
+    active_run = Demand.get_research_run!(records.research_run.id)
+    launch_request = Demand.get_launch_request!(records.launch_request.id)
+
+    assert active_run.status == "running"
+    assert active_run.error == nil
+    assert active_run.payload["codex_launch_status"] == "started"
+    assert launch_request.status == "launched"
+  end
+
   test "start_research_request_with_codex records client crashes as failed and retryable" do
     source_repo = demand_source_repo_fixture()
 
