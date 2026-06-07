@@ -1050,7 +1050,7 @@ defmodule Afp.Factory.Demand do
     Keyword.get(
       opts,
       :background_timeout_ms,
-      Application.get_env(:afp, :codex_app_background_task_timeout_ms, 1_800_000)
+      Application.get_env(:afp, :codex_app_background_task_timeout_ms, 10_800_000)
     )
   end
 

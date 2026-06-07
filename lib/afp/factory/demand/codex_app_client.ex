@@ -304,6 +304,6 @@ defmodule Afp.Factory.Demand.CodexAppClient do
   end
 
   defp default_timeout_ms do
-    Application.get_env(:afp, :codex_app_task_timeout_ms, 300_000)
+    Application.get_env(:afp, :codex_app_task_timeout_ms, 10_800_000)
   end
 end
