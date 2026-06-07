@@ -1208,14 +1208,61 @@ defmodule Afp.Factory.Demand do
       client_user_message_id: sent_message.id,
       approval_policy: "on-request",
       sandbox_mode: "workspace-write",
-      sandbox_policy: %{
-        "type" => "workspaceWrite",
-        "writableRoots" => [source_repo.repo_path],
-        "networkAccess" => true,
-        "excludeTmpdirEnvVar" => false,
-        "excludeSlashTmp" => false
-      }
+      source_repo_root: source_repo.repo_path,
+      write_targets: source_repo.write_targets || %{},
+      sqlite_path: source_repo.sqlite_path,
+      sqlite_allowed_operations: source_repo.sqlite_allowed_operations || [],
+      network_access: true,
+      sandbox_policy: codex_sandbox_policy(source_repo)
     }
+  end
+
+  defp codex_sandbox_policy(%SourceRepo{} = source_repo) do
+    %{
+      "type" => "workspaceWrite",
+      "writableRoots" => codex_writable_roots(source_repo),
+      "networkAccess" => true,
+      "excludeTmpdirEnvVar" => false,
+      "excludeSlashTmp" => false
+    }
+  end
+
+  defp codex_writable_roots(%SourceRepo{} = source_repo) do
+    declared_roots =
+      source_repo.write_targets
+      |> case do
+        targets when is_map(targets) -> Map.values(targets)
+        _targets -> []
+      end
+      |> Enum.filter(&is_binary/1)
+      |> Enum.reject(&Factory.blank?/1)
+      |> Enum.map(&source_repo_path(source_repo.repo_path, &1))
+
+    sqlite_roots =
+      case source_repo.sqlite_path do
+        path when is_binary(path) and path != "" ->
+          sqlite_path = source_repo_path(source_repo.repo_path, path)
+          [sqlite_path, Path.dirname(sqlite_path)]
+
+        _path ->
+          []
+      end
+
+    roots = Enum.uniq(declared_roots ++ sqlite_roots)
+
+    if roots == [] do
+      [source_repo.repo_path]
+    else
+      roots
+    end
+  end
+
+  defp source_repo_path(repo_path, path) do
+    if Path.type(path) == :absolute do
+      Path.expand(path)
+    else
+      Path.expand(path, repo_path)
+    end
   end
 
   defp codex_launch_input_text(%CodexLaunchRequest{} = launch_request, %SentMessage{} = message) do

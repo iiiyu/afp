@@ -29,14 +29,117 @@ defmodule Afp.Factory.CodexAppClientTest do
     assert [
              %{
                "method" => "item/commandExecution/requestApproval",
-               "response" => %{"decision" => "decline"}
+               "response" => %{
+                 "decision" => "decline",
+                 "reason" => "Command is not recognized as safe or manifest-bounded."
+               }
              }
            ] = result.server_request_responses
   end
 
-  defp fake_codex_executable!(cwd) do
+  test "launch_new_turn accepts file changes governed by the current sandbox" do
+    cwd = unique_repo_path()
+
+    codex_executable =
+      fake_codex_executable!(cwd, [
+        file_change_approval_request()
+      ])
+
+    assert {:ok, result} =
+             CodexAppClient.launch_new_turn(
+               %{
+                 cwd: cwd,
+                 input_text: "Write a bounded fake artifact.",
+                 client_user_message_id: "fake-message-2",
+                 write_targets: %{"runs" => "runs"}
+               },
+               codex_executable: codex_executable,
+               timeout_ms: 2_000
+             )
+
+    assert [
+             %{
+               "method" => "item/fileChange/requestApproval",
+               "response" => %{
+                 "decision" => "accept",
+                 "reason" =>
+                   "No extra grant root requested; turn sandbox and source repo contract apply."
+               }
+             }
+           ] = result.server_request_responses
+  end
+
+  test "launch_new_turn declines file grant roots outside manifest write targets" do
+    cwd = unique_repo_path()
+    outside_path = Path.expand("../outside", cwd)
+
+    codex_executable =
+      fake_codex_executable!(cwd, [
+        file_change_approval_request(%{"grantRoot" => outside_path})
+      ])
+
+    assert {:ok, result} =
+             CodexAppClient.launch_new_turn(
+               %{
+                 cwd: cwd,
+                 input_text: "Try an out-of-bounds fake artifact.",
+                 client_user_message_id: "fake-message-3",
+                 write_targets: %{"runs" => "runs"}
+               },
+               codex_executable: codex_executable,
+               timeout_ms: 2_000
+             )
+
+    assert [
+             %{
+               "method" => "item/fileChange/requestApproval",
+               "request" => %{"grantRoot" => ^outside_path},
+               "response" => %{
+                 "decision" => "decline",
+                 "reason" => "Requested grant root is outside manifest-declared write targets."
+               }
+             }
+           ] = result.server_request_responses
+  end
+
+  test "launch_new_turn accepts network approvals for bounded research turns" do
+    cwd = unique_repo_path()
+
+    codex_executable =
+      fake_codex_executable!(cwd, [
+        command_approval_request(cwd, %{
+          "command" => nil,
+          "networkApprovalContext" => %{"host" => "apps.apple.com"}
+        })
+      ])
+
+    assert {:ok, result} =
+             CodexAppClient.launch_new_turn(
+               %{
+                 cwd: cwd,
+                 input_text: "Fetch bounded market evidence.",
+                 client_user_message_id: "fake-message-4",
+                 network_access: true
+               },
+               codex_executable: codex_executable,
+               timeout_ms: 2_000
+             )
+
+    assert [
+             %{
+               "method" => "item/commandExecution/requestApproval",
+               "response" => %{
+                 "decision" => "accept",
+                 "reason" => "Network access is enabled for this bounded research turn."
+               }
+             }
+           ] = result.server_request_responses
+  end
+
+  defp fake_codex_executable!(cwd, approval_requests \\ nil) do
     path = Path.join(cwd, "fake-codex")
     transcript_path = Path.join(cwd, "thread.jsonl")
+    approval_requests = approval_requests || [command_approval_request(cwd)]
 
     initialize_response =
       Jason.encode!(%{"id" => "afp-initialize", "result" => %{"userAgent" => "Fake Codex"}})
@@ -61,18 +164,6 @@ defmodule Afp.Factory.CodexAppClientTest do
         "result" => %{"turn" => %{"id" => "turn-1", "status" => "inProgress"}}
       })
 
-    approval_request =
-      Jason.encode!(%{
-        "id" => "approval-1",
-        "method" => "item/commandExecution/requestApproval",
-        "params" => %{
-          "conversationId" => "thread-1",
-          "itemId" => "item-1",
-          "reason" => "fake approval",
-          "action" => %{"type" => "unknown", "command" => "fake command"}
-        }
-      })
-
     final_message =
       Jason.encode!(%{
         "method" => "item/completed",
@@ -94,22 +185,77 @@ defmodule Afp.Factory.CodexAppClientTest do
         }
       })
 
+    approval_script =
+      approval_requests
+      |> Enum.map(&Jason.encode!/1)
+      |> Enum.map_join("\n", fn request ->
+        """
+        printf '%s\\n' #{shell_quote(request)}
+        read _approval
+        """
+      end)
+      |> String.trim()
+
     File.write!(path, """
     #!/bin/sh
     read _initialize
-    printf '%s\\n' '#{initialize_response}'
+    printf '%s\\n' #{shell_quote(initialize_response)}
     read _initialized
     read _thread
-    printf '%s\\n' '#{thread_response}'
+    printf '%s\\n' #{shell_quote(thread_response)}
     read _turn
-    printf '%s\\n' '#{turn_response}'
-    printf '%s\\n' '#{approval_request}'
-    read _approval
-    printf '%s\\n' '#{final_message}'
-    printf '%s\\n' '#{turn_completed}'
+    printf '%s\\n' #{shell_quote(turn_response)}
+    #{approval_script}
+    printf '%s\\n' #{shell_quote(final_message)}
+    printf '%s\\n' #{shell_quote(turn_completed)}
     """)
 
     File.chmod!(path, 0o755)
     path
+  end
+
+  defp command_approval_request(cwd, params \\ %{}) do
+    %{
+      "id" => "approval-1",
+      "method" => "item/commandExecution/requestApproval",
+      "params" =>
+        Map.merge(
+          %{
+            "threadId" => "thread-1",
+            "turnId" => "turn-1",
+            "itemId" => "item-1",
+            "startedAtMs" => 1,
+            "cwd" => cwd,
+            "reason" => "fake approval",
+            "command" => "fake command",
+            "commandActions" => [
+              %{"type" => "unknown", "command" => "fake command"}
+            ]
+          },
+          params
+        )
+    }
+  end
+
+  defp file_change_approval_request(params \\ %{}) do
+    %{
+      "id" => "approval-1",
+      "method" => "item/fileChange/requestApproval",
+      "params" =>
+        Map.merge(
+          %{
+            "threadId" => "thread-1",
+            "turnId" => "turn-1",
+            "itemId" => "item-1",
+            "startedAtMs" => 1,
+            "reason" => "fake file approval"
+          },
+          params
+        )
+    }
+  end
+
+  defp shell_quote(value) do
+    "'#{String.replace(value, "'", "'\"'\"'")}'"
   end
 end
