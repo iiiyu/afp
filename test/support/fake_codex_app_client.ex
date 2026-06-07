@@ -4,7 +4,13 @@
 defmodule Afp.Factory.Demand.FakeCodexAppClient do
   @behaviour Afp.Factory.Demand.CodexAppClient
 
-  def launch_new_turn(attrs, _opts \\ []) do
+  def launch_new_turn(attrs, opts \\ [])
+
+  def launch_new_turn(%{input_text: "simulate interrupted turn"}, _opts) do
+    {:error, {:codex_turn_incomplete, "interrupted"}}
+  end
+
+  def launch_new_turn(attrs, _opts) do
     message_id = Map.fetch!(attrs, :client_user_message_id)
     thread_id = "fake-thread-#{message_id}"
     turn_id = "fake-turn-#{message_id}"

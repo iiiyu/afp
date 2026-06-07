@@ -1643,6 +1643,12 @@ defmodule AfpWeb.DemandLive do
   defp launch_error({:codex_app_server_exited, status}),
     do: "Codex app-server exited with status #{status}."
 
+  defp launch_error({:codex_turn_incomplete, status}),
+    do: "Codex turn did not complete; status was #{status}."
+
+  defp launch_error(:codex_turn_completion_unrecognized),
+    do: "Codex turn completed with an unrecognized payload."
+
   defp launch_error({:codex_request_error, %{"message" => message}}), do: message
   defp launch_error(reason), do: "Could not launch Codex: #{inspect(reason)}"
 

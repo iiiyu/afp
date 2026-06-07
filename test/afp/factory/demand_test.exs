@@ -276,6 +276,32 @@ defmodule Afp.Factory.DemandTest do
     assert Demand.get_research_run!(records.research_run.id).status == "draft"
   end
 
+  test "launch_research_request_with_codex records interrupted turns as failed" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready",
+        "edited_body" => "simulate interrupted turn"
+      })
+
+    assert {:error, {:codex_turn_incomplete, "interrupted"}} =
+             Demand.launch_research_request_with_codex(records.launch_request)
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.error =~ "interrupted"
+    assert failed_run.launch_request.status == "ready"
+  end
+
   test "create_session_followup links a message to an existing Codex session" do
     source_repo = demand_source_repo_fixture()
 

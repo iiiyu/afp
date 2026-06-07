@@ -137,10 +137,18 @@ defmodule Afp.Factory.Demand.CodexAppClient do
   defp maybe_complete_turn(conn, turn_id, deadline, latest_completion) do
     latest_completion = latest_turn_completion(conn.events, turn_id) || latest_completion
 
-    if latest_completion do
-      {:ok, conn, latest_completion}
-    else
-      await_turn_completed(conn, turn_id, deadline, latest_completion)
+    case latest_completion do
+      nil ->
+        await_turn_completed(conn, turn_id, deadline, latest_completion)
+
+      %{"params" => %{"turn" => %{"status" => "completed"}}} ->
+        {:ok, conn, latest_completion}
+
+      %{"params" => %{"turn" => %{"status" => status}}} ->
+        {:error, {:codex_turn_incomplete, status}}
+
+      _completion ->
+        {:error, :codex_turn_completion_unrecognized}
     end
   end
 
