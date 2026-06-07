@@ -267,13 +267,51 @@ defmodule AfpWeb.DemandLiveTest do
       )
       |> render_submit()
 
-    assert html =~ "Source research handoff created."
+    assert html =~ "Source research task created."
     assert Enum.any?(Demand.list_launch_requests(), &(&1.source_type == "demand_source_repo"))
 
     assert Enum.any?(
              Demand.list_research_runs(),
              &(&1.input_text == "tiny business receipt scanner")
            )
+  end
+
+  test "launches a research task with Codex", %{conn: conn} do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "name" => "Live Codex Source Research",
+        "default_run_type" => "manual_idea",
+        "required_variables" => "repo_path\ninput_text",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}} and research {{input_text}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "input_text" => "tiny business receipt scanner",
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/demand")
+
+    html =
+      view
+      |> element("#launch-codex-#{records.launch_request.id}")
+      |> render_click()
+
+    assert html =~ "Codex completed fake-session-"
+
+    launched_request = Demand.get_launch_request!(records.launch_request.id)
+    [run] = Demand.list_research_runs(%{"run_type" => "manual_idea"})
+
+    assert launched_request.status == "launched"
+    assert launched_request.launch_mode == "direct_codex"
+    assert run.status == "completed"
+    assert run.codex_session.external_session_id =~ "fake-session-"
   end
 
   test "verifies a candidate package from the source repo", %{conn: conn} do

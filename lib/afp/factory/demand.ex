@@ -8,6 +8,7 @@ defmodule Afp.Factory.Demand do
 
   alias Afp.Factory
   alias Afp.Factory.Demand.Candidate
+  alias Afp.Factory.Demand.CodexAppClient
   alias Afp.Factory.Demand.CodexLaunchRequest
   alias Afp.Factory.Demand.DemandItem
   alias Afp.Factory.Demand.MessageTemplate
@@ -886,6 +887,12 @@ defmodule Afp.Factory.Demand do
     |> Repo.preload([:demand_item, :app, :ticket, :release_target])
   end
 
+  def get_launch_request!(id) do
+    CodexLaunchRequest
+    |> Repo.get!(id)
+    |> Repo.preload([:demand_item, :app, :ticket, :release_target])
+  end
+
   def change_launch_request(%CodexLaunchRequest{} = launch_request, attrs \\ %{}) do
     CodexLaunchRequest.changeset(launch_request, attrs)
   end
@@ -948,6 +955,240 @@ defmodule Afp.Factory.Demand do
     Human confirmation is required before applying risky changes or promoting state.
     """
     |> String.trim()
+  end
+
+  def launch_research_request_with_codex(%CodexLaunchRequest{} = launch_request, opts \\ []) do
+    with :ok <- ensure_codex_launch_allowed(launch_request),
+         {:ok, launch_context} <- codex_launch_context(launch_request) do
+      case codex_app_client().launch_new_turn(codex_launch_attrs(launch_context), opts) do
+        {:ok, codex_result} ->
+          persist_codex_launch_success(launch_context, codex_result)
+
+        {:error, reason} = error ->
+          persist_codex_launch_failure(launch_context, reason)
+          error
+      end
+    end
+  end
+
+  defp ensure_codex_launch_allowed(%CodexLaunchRequest{status: "cancelled"}),
+    do: {:error, :launch_request_cancelled}
+
+  defp ensure_codex_launch_allowed(%CodexLaunchRequest{status: "launched"}),
+    do: {:error, :launch_request_already_launched}
+
+  defp ensure_codex_launch_allowed(%CodexLaunchRequest{} = launch_request) do
+    if launch_request.risk_level in ["high", "critical"] and
+         Factory.blank?(launch_request.confirmation) do
+      {:error, :confirmation_required}
+    else
+      :ok
+    end
+  end
+
+  defp codex_launch_context(%CodexLaunchRequest{} = launch_request) do
+    launch_request = get_launch_request!(launch_request.id)
+
+    research_run =
+      ResearchRun
+      |> Repo.get_by(codex_launch_request_id: launch_request.id)
+      |> case do
+        nil -> nil
+        run -> Repo.preload(run, [:source_repo, :candidate, :message_template, :codex_session])
+      end
+
+    sent_message =
+      SentMessage
+      |> Repo.get_by(codex_launch_request_id: launch_request.id)
+      |> case do
+        nil -> nil
+        message -> Repo.preload(message, [:research_run, :message_template, :launch_request])
+      end
+
+    cond do
+      is_nil(research_run) ->
+        {:error, :launch_request_without_research_run}
+
+      is_nil(research_run.source_repo) ->
+        {:error, :launch_request_without_source_repo}
+
+      is_nil(sent_message) ->
+        {:error, :launch_request_without_sent_message}
+
+      true ->
+        {:ok,
+         %{
+           launch_request: launch_request,
+           research_run: research_run,
+           sent_message: sent_message,
+           source_repo: research_run.source_repo,
+           input_text: codex_launch_input_text(launch_request, sent_message)
+         }}
+    end
+  end
+
+  defp codex_launch_attrs(%{
+         source_repo: source_repo,
+         sent_message: sent_message,
+         input_text: input_text
+       }) do
+    %{
+      cwd: source_repo.repo_path,
+      input_text: input_text,
+      client_user_message_id: sent_message.id,
+      approval_policy: "on-request",
+      sandbox_mode: "workspace-write",
+      sandbox_policy: %{
+        "type" => "workspaceWrite",
+        "writableRoots" => [source_repo.repo_path],
+        "networkAccess" => true,
+        "excludeTmpdirEnvVar" => false,
+        "excludeSlashTmp" => false
+      }
+    }
+  end
+
+  defp codex_launch_input_text(%CodexLaunchRequest{} = launch_request, %SentMessage{} = message) do
+    Factory.trim_nil(launch_request.handoff_text) ||
+      Factory.trim_nil(message.edited_body) ||
+      Factory.trim_nil(message.rendered_body) ||
+      launch_handoff_text(launch_request)
+  end
+
+  defp persist_codex_launch_success(launch_context, codex_result) do
+    now = Factory.now()
+    session_attrs = codex_session_attrs(launch_context, codex_result, now)
+    payload = codex_launch_payload(codex_result)
+
+    Repo.transaction(fn ->
+      session = upsert_codex_session!(session_attrs)
+
+      launch_request =
+        launch_context.launch_request
+        |> CodexLaunchRequest.changeset(%{
+          "launch_mode" => "direct_codex",
+          "status" => "launched",
+          "launched_at" => now
+        })
+        |> Repo.update!()
+
+      research_run =
+        launch_context.research_run
+        |> ResearchRun.changeset(%{
+          "codex_session_id" => session.id,
+          "status" => "completed",
+          "started_at" => now,
+          "completed_at" => now,
+          "payload" => payload
+        })
+        |> Repo.update!()
+
+      sent_message =
+        launch_context.sent_message
+        |> SentMessage.changeset(%{
+          "codex_session_id" => session.id,
+          "status" => "sent",
+          "sent_at" => now,
+          "payload" => payload
+        })
+        |> Repo.update!()
+
+      Events.record_event("codex_launch_request", launch_request.id, "launch_request_sent", %{
+        launch_mode: launch_request.launch_mode,
+        codex_session_id: session.id,
+        turn_id: payload["turn_id"]
+      })
+
+      %{
+        launch_request: launch_request,
+        research_run: Repo.preload(research_run, [:source_repo, :launch_request, :codex_session]),
+        sent_message:
+          Repo.preload(sent_message, [:research_run, :launch_request, :codex_session]),
+        codex_session: session,
+        codex_result: payload
+      }
+    end)
+    |> case do
+      {:ok, records} -> {:ok, records}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp persist_codex_launch_failure(launch_context, reason) do
+    now = Factory.now()
+    error_text = inspect(reason)
+
+    Repo.transaction(fn ->
+      launch_context.research_run
+      |> ResearchRun.changeset(%{
+        "status" => "failed",
+        "error" => error_text,
+        "payload" => %{"codex_error" => error_text}
+      })
+      |> Repo.update!()
+
+      launch_context.sent_message
+      |> SentMessage.changeset(%{
+        "status" => "failed",
+        "failed_at" => now,
+        "payload" => %{"codex_error" => error_text}
+      })
+      |> Repo.update!()
+
+      Events.record_event(
+        "codex_launch_request",
+        launch_context.launch_request.id,
+        "launch_request_failed",
+        %{reason: error_text}
+      )
+    end)
+
+    :ok
+  end
+
+  defp codex_session_attrs(%{source_repo: source_repo}, codex_result, now) do
+    thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
+    turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
+
+    %{
+      "external_session_id" => thread["sessionId"] || thread["id"],
+      "cwd" => thread["cwd"] || source_repo.repo_path,
+      "model" => get_in(codex_result, [:thread_response, "result", "model"]),
+      "status" => "stopped",
+      "transcript_path" => thread["path"],
+      "latest_turn_id" => turn["id"],
+      "summary" => Map.get(codex_result, :final_answer),
+      "first_seen_at" => now,
+      "last_seen_at" => now,
+      "stopped_at" => now
+    }
+  end
+
+  defp codex_launch_payload(codex_result) do
+    thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
+    turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
+    completed_turn = get_in(codex_result, [:turn_completed, "params", "turn"]) || %{}
+
+    %{
+      "thread_id" => thread["id"],
+      "session_id" => thread["sessionId"] || thread["id"],
+      "turn_id" => turn["id"] || completed_turn["id"],
+      "turn_status" => completed_turn["status"],
+      "final_answer" => Map.get(codex_result, :final_answer),
+      "event_count" => length(Map.get(codex_result, :notifications, []))
+    }
+  end
+
+  defp upsert_codex_session!(attrs) do
+    existing = Repo.get_by(CodexSession, external_session_id: attrs["external_session_id"])
+
+    (existing || %CodexSession{})
+    |> CodexSession.changeset(attrs)
+    |> Repo.insert_or_update!()
+  end
+
+  defp codex_app_client do
+    Application.get_env(:afp, :codex_app_client, CodexAppClient)
   end
 
   defp ensure_source_indexable(%SourceRepo{health_state: "healthy"}), do: :ok

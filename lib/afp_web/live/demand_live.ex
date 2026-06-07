@@ -137,6 +137,31 @@ defmodule AfpWeb.DemandLive do
      |> load_demand(socket.assigns.filters)}
   end
 
+  def handle_event(
+        "launch_research_request_with_codex",
+        %{"launch_request_id" => launch_request_id},
+        socket
+      ) do
+    launch_request = Demand.get_launch_request!(launch_request_id)
+
+    case Demand.launch_research_request_with_codex(launch_request) do
+      {:ok, records} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "Codex completed #{records.codex_session.external_session_id} turn #{records.codex_result["turn_id"]}."
+         )
+         |> load_demand(socket.assigns.filters)}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, launch_error(reason))
+         |> load_demand(socket.assigns.filters)}
+    end
+  end
+
   def handle_event("create_candidate", %{"candidate" => params}, socket) do
     if Factory.blank?(params["demand_source_repo_id"]) do
       {:noreply, put_flash(socket, :error, "Choose a source repo first.")}
@@ -248,7 +273,7 @@ defmodule AfpWeb.DemandLive do
           {:ok, _records} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Source research handoff created.")
+             |> put_flash(:info, "Source research task created.")
              |> assign(:source_launch_form, to_form(%{}, as: :source_launch))
              |> load_demand(socket.assigns.filters)}
 
@@ -942,7 +967,7 @@ defmodule AfpWeb.DemandLive do
 
             <.panel title="Launch Requests">
               <:subtitle>
-                Manual Codex handoffs from demand validation work.
+                Research tasks queued for manual handoff or direct Codex launch.
               </:subtitle>
               <div :if={@launch_requests == []}>
                 <.empty_state message="No launch requests yet." />
@@ -969,6 +994,16 @@ defmodule AfpWeb.DemandLive do
                       class="w-full rounded border border-slate-300 bg-slate-50 p-3 font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                     ><%= request.handoff_text %></textarea>
                   </.disclosure>
+                  <button
+                    :if={request.status not in ["launched", "cancelled"]}
+                    type="button"
+                    id={"launch-codex-#{request.id}"}
+                    phx-click="launch_research_request_with_codex"
+                    phx-value-launch_request_id={request.id}
+                    class="mt-3 inline-flex items-center gap-1.5 rounded border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                  >
+                    <.icon name="hero-play" class="size-4" /> Launch Codex
+                  </button>
                 </article>
               </div>
             </.panel>
@@ -1269,7 +1304,7 @@ defmodule AfpWeb.DemandLive do
                     rows="8"
                   />
                   <.button type="submit" variant="primary">
-                    <.icon name="hero-magnifying-glass" class="size-4" /> Create research handoff
+                    <.icon name="hero-magnifying-glass" class="size-4" /> Create research task
                   </.button>
                 </.form>
               </.disclosure>
@@ -1585,6 +1620,31 @@ defmodule AfpWeb.DemandLive do
       as: :source_repo_template
     )
   end
+
+  defp launch_error(:launch_request_cancelled), do: "Launch request is cancelled."
+  defp launch_error(:launch_request_already_launched), do: "Launch request was already launched."
+  defp launch_error(:confirmation_required), do: "High-risk launch requires confirmation."
+
+  defp launch_error(:launch_request_without_research_run),
+    do: "Launch request is not linked to a research run."
+
+  defp launch_error(:launch_request_without_source_repo),
+    do: "Launch request is not linked to a source repo."
+
+  defp launch_error(:launch_request_without_sent_message),
+    do: "Launch request is missing its outbound message."
+
+  defp launch_error(:codex_cli_not_found), do: "codex CLI is not available on this machine."
+  defp launch_error(:codex_turn_timeout), do: "Codex turn timed out before completion."
+
+  defp launch_error({:codex_response_timeout, request_id}),
+    do: "Codex app-server did not respond to request #{request_id}."
+
+  defp launch_error({:codex_app_server_exited, status}),
+    do: "Codex app-server exited with status #{status}."
+
+  defp launch_error({:codex_request_error, %{"message" => message}}), do: message
+  defp launch_error(reason), do: "Could not launch Codex: #{inspect(reason)}"
 
   defp refresh_error({:source_unhealthy, health_state}) do
     "Source is #{Factory.labelize(health_state)}; repair source health before indexing."

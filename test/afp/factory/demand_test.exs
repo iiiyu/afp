@@ -221,6 +221,61 @@ defmodule Afp.Factory.DemandTest do
     assert records.sent_message.rendered_body =~ "receipt scanner"
   end
 
+  test "launch_research_request_with_codex records direct Codex session state" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "name" => "Codex Source Research",
+        "default_run_type" => "manual_idea",
+        "required_variables" => "repo_path\ninput_text",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}} and research {{input_text}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "input_text" => "receipt scanner for tiny businesses",
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    assert {:ok, launched} = Demand.launch_research_request_with_codex(records.launch_request)
+
+    assert launched.launch_request.status == "launched"
+    assert launched.launch_request.launch_mode == "direct_codex"
+    assert launched.research_run.status == "completed"
+    assert launched.research_run.codex_session_id == launched.codex_session.id
+    assert launched.sent_message.status == "sent"
+    assert launched.sent_message.codex_session_id == launched.codex_session.id
+    assert launched.codex_session.external_session_id =~ "fake-session-"
+    assert launched.codex_session.cwd == source_repo.repo_path
+    assert launched.codex_result["turn_status"] == "completed"
+    assert launched.codex_result["final_answer"] =~ "Fake Codex completed"
+  end
+
+  test "launch_research_request_with_codex requires confirmation for high risk requests" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "high",
+        "status" => "draft"
+      })
+
+    assert {:error, :confirmation_required} =
+             Demand.launch_research_request_with_codex(records.launch_request)
+
+    assert Demand.get_research_run!(records.research_run.id).status == "draft"
+  end
+
   test "create_session_followup links a message to an existing Codex session" do
     source_repo = demand_source_repo_fixture()
 

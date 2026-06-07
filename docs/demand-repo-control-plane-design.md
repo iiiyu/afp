@@ -81,8 +81,10 @@ Operator-confirmed actions:
 - advance app lifecycle state
 - archive, reject, or supersede a product package
 
-The default Codex launch mode remains `manual_handoff`. Direct Codex App
-Service execution can be added behind the same launch-request contract, but it
+The default Codex launch mode remains `manual_handoff`. A ready or draft
+launch request can also be explicitly sent through `direct_codex`, which uses
+the Codex app-server JSON-RPC stdio interface to create a new thread and turn.
+This direct launch path is still behind the same launch-request contract and
 must not bypass these gates.
 
 When AFP triggers Codex, Codex owns the concrete work inside the target repo:
@@ -447,8 +449,8 @@ New-session send:
 2. AFP renders the message with repo path, candidate id, lane, output paths, and
    constraints.
 3. Operator edits and confirms.
-4. AFP creates a Codex launch request and starts a new session through the Codex
-   App Service adapter or manual handoff.
+4. AFP creates a Codex launch request and either keeps it as a manual handoff
+   or starts a new session through the Codex app-server JSON-RPC adapter.
 5. AFP links the resulting session to the run.
 
 Continue-session send:
