@@ -4,6 +4,7 @@
 defmodule Afp.Factory.DemandTest do
   use Afp.DataCase, async: true
 
+  import ExUnit.CaptureIO
   import Afp.FactoryFixtures
 
   alias Afp.Factory.Demand
@@ -308,11 +309,16 @@ defmodule Afp.Factory.DemandTest do
         "status" => "ready"
       })
 
-    assert {:error, {:codex_launch_supervisor_missing, MissingCodexLaunchSupervisor}} =
-             Demand.start_research_request_with_codex(records.launch_request,
-               mode: :async,
-               supervisor: MissingCodexLaunchSupervisor
-             )
+    output =
+      capture_io(fn ->
+        assert {:error, {:codex_launch_supervisor_missing, MissingCodexLaunchSupervisor}} =
+                 Demand.start_research_request_with_codex(records.launch_request,
+                   mode: :async,
+                   supervisor: MissingCodexLaunchSupervisor
+                 )
+      end)
+
+    assert output =~ "Codex launch worker failed to start"
 
     failed_run = Demand.get_research_run!(records.research_run.id)
     launch_request = Demand.get_launch_request!(records.launch_request.id)
@@ -360,8 +366,13 @@ defmodule Afp.Factory.DemandTest do
         "edited_body" => "simulate interrupted turn"
       })
 
-    assert {:error, {:codex_turn_incomplete, "interrupted"}} =
-             Demand.launch_research_request_with_codex(records.launch_request)
+    output =
+      capture_io(fn ->
+        assert {:error, {:codex_turn_incomplete, "interrupted"}} =
+                 Demand.launch_research_request_with_codex(records.launch_request)
+      end)
+
+    assert output =~ "Codex launch failed"
 
     failed_run = Demand.get_research_run!(records.research_run.id)
 
@@ -386,8 +397,13 @@ defmodule Afp.Factory.DemandTest do
         "edited_body" => "simulate aborted turn"
       })
 
-    assert {:error, {:codex_turn_aborted, "interrupted"}} =
-             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+    output =
+      capture_io(fn ->
+        assert {:error, {:codex_turn_aborted, "interrupted"}} =
+                 Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+      end)
+
+    assert output =~ "codex_turn_aborted"
 
     failed_run = Demand.get_research_run!(records.research_run.id)
     launch_request = Demand.get_launch_request!(records.launch_request.id)
@@ -414,8 +430,14 @@ defmodule Afp.Factory.DemandTest do
         "edited_body" => "simulate client crash"
       })
 
-    assert {:error, {:codex_launch_unhandled_failure, {:error, "simulated codex client crash"}}} =
-             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+    output =
+      capture_io(fn ->
+        assert {:error,
+                {:codex_launch_unhandled_failure, {:error, "simulated codex client crash"}}} =
+                 Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+      end)
+
+    assert output =~ "simulated codex client crash"
 
     failed_run = Demand.get_research_run!(records.research_run.id)
     launch_request = Demand.get_launch_request!(records.launch_request.id)

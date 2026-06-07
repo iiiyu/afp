@@ -4,6 +4,8 @@
 defmodule Afp.Factory.Demand do
   import Ecto.Query
 
+  require Logger
+
   alias Ecto.Changeset
 
   alias Afp.Factory
@@ -1284,6 +1286,8 @@ defmodule Afp.Factory.Demand do
     now = Factory.now()
     error_text = inspect({:codex_launch_worker_start_failed, reason})
 
+    log_codex_launch_failure("Codex launch worker failed to start", launch_context, error_text)
+
     Repo.transaction(fn ->
       launch_request = Repo.get!(CodexLaunchRequest, launch_context.launch_request.id)
 
@@ -1389,6 +1393,8 @@ defmodule Afp.Factory.Demand do
     now = Factory.now()
     error_text = inspect(reason)
 
+    log_codex_launch_failure("Codex launch failed", launch_context, error_text)
+
     Repo.transaction(fn ->
       launch_request =
         launch_context.launch_request
@@ -1448,6 +1454,7 @@ defmodule Afp.Factory.Demand do
     thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
     completed_turn = get_in(codex_result, [:turn_completed, "params", "turn"]) || %{}
+    server_request_responses = Map.get(codex_result, :server_request_responses, [])
 
     %{
       "thread_id" => thread["id"],
@@ -1455,8 +1462,26 @@ defmodule Afp.Factory.Demand do
       "turn_id" => turn["id"] || completed_turn["id"],
       "turn_status" => completed_turn["status"],
       "final_answer" => Map.get(codex_result, :final_answer),
-      "event_count" => length(Map.get(codex_result, :notifications, []))
+      "event_count" => length(Map.get(codex_result, :notifications, [])),
+      "server_request_count" => length(server_request_responses),
+      "server_request_methods" =>
+        server_request_responses
+        |> Enum.map(&Map.get(&1, "method"))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
     }
+  end
+
+  defp log_codex_launch_failure(message, launch_context, error_text) do
+    metadata = %{
+      launch_request_id: launch_context.launch_request.id,
+      research_run_id: launch_context.research_run.id,
+      sent_message_id: launch_context.sent_message.id,
+      reason: error_text
+    }
+
+    Logger.error("#{message}: #{inspect(metadata)}")
+    IO.puts(:stdio, "[error] #{message}: #{inspect(metadata)}")
   end
 
   defp upsert_codex_session!(attrs) do
