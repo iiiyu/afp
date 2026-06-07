@@ -442,6 +442,8 @@ defmodule AfpWeb.DemandLive do
   end
 
   defp load_demand(socket, filters) do
+    Demand.reconcile_stale_running_research_runs()
+
     source_repos = Demand.list_source_repos()
     candidates = Demand.list_candidates()
     demand_items = Demand.list_demand_items(filters)

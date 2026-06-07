@@ -7,7 +7,11 @@ defmodule Afp.Factory.DemandTest do
   import ExUnit.CaptureIO
   import Afp.FactoryFixtures
 
+  alias Afp.Factory.Demand.CodexLaunchRequest
+  alias Afp.Factory.Demand.ResearchRun
+  alias Afp.Factory.Demand.SentMessage
   alias Afp.Factory.Demand
+  alias Afp.Repo
 
   test "create_source_repo reads unified demand repo manifest and health" do
     source_repo = demand_source_repo_fixture()
@@ -412,6 +416,101 @@ defmodule Afp.Factory.DemandTest do
     assert failed_run.error =~ "codex_turn_aborted"
     assert launch_request.status == "ready"
     assert launch_request.launch_mode == "direct_codex"
+  end
+
+  test "start_research_request_with_codex preserves Codex thread metadata when a turn fails" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready",
+        "edited_body" => "simulate aborted turn"
+      })
+
+    assert {:error, {:codex_turn_aborted, "interrupted"}} =
+             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.codex_session_id
+    assert failed_run.payload["thread_id"] =~ "fake-thread-"
+    assert failed_run.payload["turn_id"] =~ "fake-turn-"
+    assert failed_run.payload["transcript_path"] =~ "fake-thread-"
+    assert failed_run.codex_session.status == "stopped"
+    assert failed_run.codex_session.latest_turn_id == failed_run.payload["turn_id"]
+  end
+
+  test "list_research_runs marks stale startup-only direct Codex runs failed and retryable" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    old_started_at = DateTime.add(DateTime.utc_now(), -900, :second)
+
+    records.launch_request
+    |> CodexLaunchRequest.changeset(%{
+      "launch_mode" => "direct_codex",
+      "status" => "launched",
+      "launched_at" => old_started_at
+    })
+    |> Repo.update!()
+
+    records.research_run
+    |> ResearchRun.changeset(%{
+      "status" => "running",
+      "started_at" => old_started_at,
+      "payload" => %{
+        "codex_launch_status" => "started",
+        "started_at" => DateTime.to_iso8601(old_started_at)
+      }
+    })
+    |> Repo.update!()
+
+    records.sent_message
+    |> SentMessage.changeset(%{
+      "status" => "accepted",
+      "sent_at" => old_started_at,
+      "payload" => %{
+        "codex_launch_status" => "started",
+        "started_at" => DateTime.to_iso8601(old_started_at)
+      }
+    })
+    |> Repo.update!()
+
+    assert [_failed_run] =
+             Demand.reconcile_stale_running_research_runs(
+               now: DateTime.utc_now(),
+               startup_grace_ms: 600_000
+             )
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+    launch_request = Demand.get_launch_request!(records.launch_request.id)
+    sent_message = Repo.get!(SentMessage, records.sent_message.id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.error =~ "without thread metadata"
+    assert failed_run.payload["codex_launch_status"] == "stale_startup_failed"
+    assert launch_request.status == "ready"
+    assert launch_request.launch_mode == "direct_codex"
+    assert sent_message.status == "failed"
   end
 
   test "start_research_request_with_codex records client crashes as failed and retryable" do

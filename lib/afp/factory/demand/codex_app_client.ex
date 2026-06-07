@@ -91,7 +91,8 @@ defmodule Afp.Factory.Demand.CodexAppClient do
       server_request_responses: [],
       approval_decision:
         Keyword.get(opts, :approval_decision, Map.get(attrs, :approval_decision)),
-      approval_profile: approval_profile(attrs)
+      approval_profile: approval_profile(attrs),
+      launch_event_handler: Keyword.get(opts, :on_launch_event)
     }
   end
 
@@ -130,8 +131,10 @@ defmodule Afp.Factory.Demand.CodexAppClient do
       }
     }
 
-    with :ok <- send_message(conn.port, request) do
-      receive_response(conn, @thread_start_request_id, timeout_ms)
+    with :ok <- send_message(conn.port, request),
+         {:ok, conn, response} <- receive_response(conn, @thread_start_request_id, timeout_ms),
+         {:ok, conn} <- notify_launch_event(conn, :thread_started, response) do
+      {:ok, conn, response}
     end
   end
 
@@ -152,8 +155,10 @@ defmodule Afp.Factory.Demand.CodexAppClient do
       }
     }
 
-    with :ok <- send_message(conn.port, request) do
-      receive_response(conn, @turn_start_request_id, timeout_ms)
+    with :ok <- send_message(conn.port, request),
+         {:ok, conn, response} <- receive_response(conn, @turn_start_request_id, timeout_ms),
+         {:ok, conn} <- notify_launch_event(conn, :turn_started, response) do
+      {:ok, conn, response}
     end
   end
 
@@ -253,6 +258,21 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     |> handle_chunk(chunk)
     |> respond_to_server_requests()
   end
+
+  defp notify_launch_event(%{launch_event_handler: handler} = conn, event, payload)
+       when is_function(handler, 2) do
+    case handler.(event, payload) do
+      :ok -> {:ok, conn}
+      {:ok, _result} -> {:ok, conn}
+      {:error, reason} -> {:error, {:codex_launch_progress_failed, event, reason}}
+      other -> {:error, {:codex_launch_progress_failed, event, other}}
+    end
+  catch
+    kind, reason ->
+      {:error, {:codex_launch_progress_failed, event, {kind, reason}}}
+  end
+
+  defp notify_launch_event(conn, _event, _payload), do: {:ok, conn}
 
   defp handle_chunk(conn, chunk) do
     text = conn.buffer <> chunk

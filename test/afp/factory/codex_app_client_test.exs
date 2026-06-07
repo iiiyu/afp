@@ -37,6 +37,34 @@ defmodule Afp.Factory.CodexAppClientTest do
            ] = result.server_request_responses
   end
 
+  test "launch_new_turn reports thread and turn progress callbacks" do
+    cwd = unique_repo_path()
+    codex_executable = fake_codex_executable!(cwd, [file_change_approval_request()])
+    parent = self()
+
+    assert {:ok, _result} =
+             CodexAppClient.launch_new_turn(
+               %{
+                 cwd: cwd,
+                 input_text: "Run a bounded fake task with progress.",
+                 client_user_message_id: "fake-message-progress",
+                 write_targets: %{"runs" => "runs"}
+               },
+               codex_executable: codex_executable,
+               timeout_ms: 2_000,
+               on_launch_event: fn event, payload ->
+                 send(parent, {:codex_progress, event, payload})
+                 :ok
+               end
+             )
+
+    assert_receive {:codex_progress, :thread_started,
+                    %{"result" => %{"thread" => %{"id" => "thread-1"}}}}
+
+    assert_receive {:codex_progress, :turn_started,
+                    %{"result" => %{"turn" => %{"id" => "turn-1"}}}}
+  end
+
   test "launch_new_turn accepts file changes governed by the current sandbox" do
     cwd = unique_repo_path()
 
