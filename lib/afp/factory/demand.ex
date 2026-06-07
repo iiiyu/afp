@@ -71,6 +71,8 @@ defmodule Afp.Factory.Demand do
     "schedule_interval_hours" => :schedule_interval_hours
   }
 
+  @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
+
   def list_source_repos(params \\ %{}) do
     SourceRepo
     |> apply_filter(:health_state, filter_value(params, "health_state"))
@@ -971,6 +973,87 @@ defmodule Afp.Factory.Demand do
     end
   end
 
+  def start_research_request_with_codex(%CodexLaunchRequest{} = launch_request, opts \\ []) do
+    with :ok <- ensure_codex_launch_allowed(launch_request),
+         {:ok, launch_context} <- codex_launch_context(launch_request),
+         {:ok, started_records} <- persist_codex_launch_started(launch_context) do
+      case codex_launch_mode(opts) do
+        :sync ->
+          case complete_codex_launch(started_records.launch_request.id, opts) do
+            {:ok, completed_records} ->
+              {:ok, Map.put(started_records, :completion, completed_records)}
+
+            {:error, _reason} = error ->
+              error
+          end
+
+        :async ->
+          case start_codex_launch_worker(started_records.launch_request.id, opts) do
+            {:ok, pid} ->
+              {:ok, Map.put(started_records, :codex_launch_worker_pid, pid)}
+
+            {:error, reason} ->
+              persist_codex_launch_worker_start_failure(launch_context, reason)
+              {:error, reason}
+          end
+      end
+    end
+  end
+
+  def complete_codex_launch(launch_request_id, opts \\ []) do
+    launch_request = get_launch_request!(launch_request_id)
+
+    with {:ok, launch_context} <- codex_launch_context(launch_request) do
+      case codex_app_client().launch_new_turn(
+             codex_launch_attrs(launch_context),
+             codex_completion_opts(opts)
+           ) do
+        {:ok, codex_result} ->
+          persist_codex_launch_success(launch_context, codex_result)
+
+        {:error, reason} = error ->
+          persist_codex_launch_failure(launch_context, reason)
+          error
+      end
+    end
+  end
+
+  defp codex_launch_mode(opts) do
+    case Keyword.get(opts, :mode, Application.get_env(:afp, :codex_launch_mode, :async)) do
+      :sync -> :sync
+      "sync" -> :sync
+      _mode -> :async
+    end
+  end
+
+  defp start_codex_launch_worker(launch_request_id, opts) do
+    try do
+      Task.Supervisor.start_child(codex_launch_supervisor(opts), fn ->
+        complete_codex_launch(launch_request_id, opts)
+      end)
+    catch
+      :exit, reason -> {:error, {:codex_launch_supervisor_exit, reason}}
+    end
+  end
+
+  defp codex_launch_supervisor(opts) do
+    Keyword.get(opts, :supervisor, @codex_launch_supervisor)
+  end
+
+  defp codex_completion_opts(opts) do
+    opts
+    |> Keyword.drop([:background_timeout_ms, :mode, :supervisor])
+    |> Keyword.put_new(:timeout_ms, codex_background_timeout_ms(opts))
+  end
+
+  defp codex_background_timeout_ms(opts) do
+    Keyword.get(
+      opts,
+      :background_timeout_ms,
+      Application.get_env(:afp, :codex_app_background_task_timeout_ms, 1_800_000)
+    )
+  end
+
   defp ensure_codex_launch_allowed(%CodexLaunchRequest{status: "cancelled"}),
     do: {:error, :launch_request_cancelled}
 
@@ -1055,10 +1138,111 @@ defmodule Afp.Factory.Demand do
       launch_handoff_text(launch_request)
   end
 
+  defp persist_codex_launch_started(launch_context) do
+    now = Factory.now()
+
+    payload = %{
+      "codex_launch_status" => "started",
+      "started_at" => DateTime.to_iso8601(now)
+    }
+
+    Repo.transaction(fn ->
+      launch_request =
+        launch_context.launch_request
+        |> CodexLaunchRequest.changeset(%{
+          "launch_mode" => "direct_codex",
+          "status" => "launched",
+          "launched_at" => launch_context.launch_request.launched_at || now
+        })
+        |> Repo.update!()
+
+      research_run =
+        launch_context.research_run
+        |> ResearchRun.changeset(%{
+          "status" => "running",
+          "started_at" => launch_context.research_run.started_at || now,
+          "completed_at" => nil,
+          "error" => nil,
+          "payload" => payload
+        })
+        |> Repo.update!()
+
+      sent_message =
+        launch_context.sent_message
+        |> SentMessage.changeset(%{
+          "status" => "accepted",
+          "sent_at" => launch_context.sent_message.sent_at || now,
+          "failed_at" => nil,
+          "payload" => payload
+        })
+        |> Repo.update!()
+
+      Events.record_event("codex_launch_request", launch_request.id, "launch_request_started", %{
+        launch_mode: launch_request.launch_mode,
+        research_run_id: research_run.id,
+        sent_message_id: sent_message.id
+      })
+
+      %{
+        launch_request: launch_request,
+        research_run: Repo.preload(research_run, [:source_repo, :launch_request, :codex_session]),
+        sent_message: Repo.preload(sent_message, [:research_run, :launch_request, :codex_session])
+      }
+    end)
+    |> case do
+      {:ok, records} -> {:ok, records}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp persist_codex_launch_worker_start_failure(launch_context, reason) do
+    now = Factory.now()
+    error_text = inspect({:codex_launch_worker_start_failed, reason})
+
+    Repo.transaction(fn ->
+      launch_request = Repo.get!(CodexLaunchRequest, launch_context.launch_request.id)
+
+      launch_request
+      |> CodexLaunchRequest.changeset(%{
+        "launch_mode" => launch_context.launch_request.launch_mode,
+        "status" => launch_context.launch_request.status,
+        "launched_at" => launch_context.launch_request.launched_at
+      })
+      |> Repo.update!()
+
+      launch_context.research_run
+      |> ResearchRun.changeset(%{
+        "status" => "failed",
+        "error" => error_text,
+        "completed_at" => now,
+        "payload" => %{"codex_error" => error_text}
+      })
+      |> Repo.update!()
+
+      launch_context.sent_message
+      |> SentMessage.changeset(%{
+        "status" => "failed",
+        "failed_at" => now,
+        "payload" => %{"codex_error" => error_text}
+      })
+      |> Repo.update!()
+
+      Events.record_event(
+        "codex_launch_request",
+        launch_context.launch_request.id,
+        "launch_request_failed",
+        %{reason: error_text}
+      )
+    end)
+
+    :ok
+  end
+
   defp persist_codex_launch_success(launch_context, codex_result) do
     now = Factory.now()
     session_attrs = codex_session_attrs(launch_context, codex_result, now)
     payload = codex_launch_payload(codex_result)
+    started_at = launch_context.research_run.started_at || now
 
     Repo.transaction(fn ->
       session = upsert_codex_session!(session_attrs)
@@ -1077,8 +1261,9 @@ defmodule Afp.Factory.Demand do
         |> ResearchRun.changeset(%{
           "codex_session_id" => session.id,
           "status" => "completed",
-          "started_at" => now,
+          "started_at" => started_at,
           "completed_at" => now,
+          "error" => nil,
           "payload" => payload
         })
         |> Repo.update!()
@@ -1089,6 +1274,7 @@ defmodule Afp.Factory.Demand do
           "codex_session_id" => session.id,
           "status" => "sent",
           "sent_at" => now,
+          "failed_at" => nil,
           "payload" => payload
         })
         |> Repo.update!()
@@ -1123,6 +1309,7 @@ defmodule Afp.Factory.Demand do
       |> ResearchRun.changeset(%{
         "status" => "failed",
         "error" => error_text,
+        "completed_at" => now,
         "payload" => %{"codex_error" => error_text}
       })
       |> Repo.update!()

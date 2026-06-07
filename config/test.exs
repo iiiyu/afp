@@ -31,6 +31,7 @@ config :logger, level: :warning
 
 config :afp, Oban, testing: :manual
 config :afp, :codex_app_client, Afp.Factory.Demand.FakeCodexAppClient
+config :afp, :codex_launch_mode, :sync
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime

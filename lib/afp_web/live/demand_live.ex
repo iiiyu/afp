@@ -144,13 +144,13 @@ defmodule AfpWeb.DemandLive do
       ) do
     launch_request = Demand.get_launch_request!(launch_request_id)
 
-    case Demand.launch_research_request_with_codex(launch_request) do
+    case Demand.start_research_request_with_codex(launch_request) do
       {:ok, records} ->
         {:noreply,
          socket
          |> put_flash(
            :info,
-           "Codex completed #{records.codex_session.external_session_id} turn #{records.codex_result["turn_id"]}."
+           "Codex launch started for #{records.launch_request.title}. The research run will update when Codex completes."
          )
          |> load_demand(socket.assigns.filters)}
 

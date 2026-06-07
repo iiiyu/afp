@@ -255,6 +255,74 @@ defmodule Afp.Factory.DemandTest do
     assert launched.codex_result["final_answer"] =~ "Fake Codex completed"
   end
 
+  test "start_research_request_with_codex marks running before Codex completion" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "name" => "Codex Async Source Research",
+        "default_run_type" => "manual_idea",
+        "required_variables" => "repo_path\ninput_text",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}} and research {{input_text}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "input_text" => "receipt scanner for tiny businesses",
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    assert {:ok, started} =
+             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+
+    assert started.launch_request.status == "launched"
+    assert started.launch_request.launch_mode == "direct_codex"
+    assert started.research_run.status == "running"
+    assert started.sent_message.status == "accepted"
+
+    assert started.completion.research_run.status == "completed"
+    assert started.completion.research_run.codex_session_id == started.completion.codex_session.id
+    assert started.completion.sent_message.status == "sent"
+    assert started.completion.codex_result["turn_status"] == "completed"
+  end
+
+  test "start_research_request_with_codex keeps launch retryable when worker cannot start" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "name" => "Codex Missing Worker Research",
+        "default_run_type" => "manual_idea",
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "run_type" => "manual_idea",
+        "lane" => "app",
+        "risk_level" => "normal",
+        "status" => "ready"
+      })
+
+    assert {:error, {:codex_launch_supervisor_exit, _reason}} =
+             Demand.start_research_request_with_codex(records.launch_request,
+               mode: :async,
+               supervisor: MissingCodexLaunchSupervisor
+             )
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+    launch_request = Demand.get_launch_request!(records.launch_request.id)
+
+    assert launch_request.status == "ready"
+    assert launch_request.launch_mode == "manual_handoff"
+    assert failed_run.status == "failed"
+    assert failed_run.error =~ "codex_launch_worker_start_failed"
+  end
+
   test "launch_research_request_with_codex requires confirmation for high risk requests" do
     source_repo = demand_source_repo_fixture()
 

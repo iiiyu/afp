@@ -303,7 +303,7 @@ defmodule AfpWeb.DemandLiveTest do
       |> element("#launch-codex-#{records.launch_request.id}")
       |> render_click()
 
-    assert html =~ "Codex completed fake-session-"
+    assert html =~ "Codex launch started for"
 
     launched_request = Demand.get_launch_request!(records.launch_request.id)
     [run] = Demand.list_research_runs(%{"run_type" => "manual_idea"})
