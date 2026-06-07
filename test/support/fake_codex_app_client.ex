@@ -10,6 +10,14 @@ defmodule Afp.Factory.Demand.FakeCodexAppClient do
     {:error, {:codex_turn_incomplete, "interrupted"}}
   end
 
+  def launch_new_turn(%{input_text: "simulate aborted turn"}, _opts) do
+    {:error, {:codex_turn_aborted, "interrupted"}}
+  end
+
+  def launch_new_turn(%{input_text: "simulate client crash"}, _opts) do
+    raise "simulated codex client crash"
+  end
+
   def launch_new_turn(attrs, _opts) do
     message_id = Map.fetch!(attrs, :client_user_message_id)
     thread_id = "fake-thread-#{message_id}"

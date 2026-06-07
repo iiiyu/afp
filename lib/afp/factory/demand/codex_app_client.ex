@@ -77,7 +77,8 @@ defmodule Afp.Factory.Demand.CodexAppClient do
         "approvalPolicy" => Map.get(attrs, :approval_policy, "on-request"),
         "sandbox" => Map.get(attrs, :sandbox_mode, "workspace-write"),
         "model" => Map.get(attrs, :model),
-        "ephemeral" => Map.get(attrs, :ephemeral, false)
+        "ephemeral" => Map.get(attrs, :ephemeral, false),
+        "threadSource" => Map.get(attrs, :thread_source, %{"type" => "external"})
       }
     }
 
@@ -135,17 +136,29 @@ defmodule Afp.Factory.Demand.CodexAppClient do
   end
 
   defp maybe_complete_turn(conn, turn_id, deadline, latest_completion) do
-    latest_completion = latest_turn_completion(conn.events, turn_id) || latest_completion
+    latest_completion = latest_turn_terminal_event(conn.events, turn_id) || latest_completion
 
     case latest_completion do
       nil ->
         await_turn_completed(conn, turn_id, deadline, latest_completion)
 
-      %{"params" => %{"turn" => %{"status" => "completed"}}} ->
+      %{"method" => "turn/completed", "params" => %{"turn" => %{"status" => "completed"}}} ->
         {:ok, conn, latest_completion}
 
-      %{"params" => %{"turn" => %{"status" => status}}} ->
+      %{"method" => "turn/completed", "params" => %{"turn" => %{"status" => status}}} ->
         {:error, {:codex_turn_incomplete, status}}
+
+      %{"method" => "turn/aborted"} ->
+        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
+
+      %{"method" => "turn/failed"} ->
+        {:error, {:codex_turn_failed, terminal_reason(latest_completion)}}
+
+      %{"type" => "event_msg", "payload" => %{"type" => "turn_aborted"}} ->
+        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
+
+      %{"type" => "turn_aborted"} ->
+        {:error, {:codex_turn_aborted, terminal_reason(latest_completion)}}
 
       _completion ->
         {:error, :codex_turn_completion_unrecognized}
@@ -215,13 +228,34 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     end)
   end
 
-  defp latest_turn_completion(events, turn_id) do
+  defp latest_turn_terminal_event(events, turn_id) do
     events
     |> Enum.reverse()
     |> Enum.find(fn
-      %{"method" => "turn/completed", "params" => %{"turn" => %{"id" => ^turn_id}}} -> true
-      _event -> false
+      %{"method" => "turn/completed", "params" => %{"turn" => %{"id" => ^turn_id}}} ->
+        true
+
+      %{"method" => method, "params" => %{"turn" => %{"id" => ^turn_id}}}
+      when method in ["turn/aborted", "turn/failed"] ->
+        true
+
+      %{"type" => "event_msg", "payload" => %{"type" => "turn_aborted", "turn_id" => ^turn_id}} ->
+        true
+
+      %{"type" => "turn_aborted", "turn_id" => ^turn_id} ->
+        true
+
+      _event ->
+        false
     end)
+  end
+
+  defp terminal_reason(event) do
+    get_in(event, ["params", "reason"]) ||
+      get_in(event, ["params", "turn", "reason"]) ||
+      get_in(event, ["payload", "reason"]) ||
+      Map.get(event, "reason") ||
+      "unknown"
   end
 
   defp final_answer(events) do

@@ -370,6 +370,62 @@ defmodule Afp.Factory.DemandTest do
     assert failed_run.launch_request.status == "ready"
   end
 
+  test "start_research_request_with_codex records aborted turns as failed and retryable" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready",
+        "edited_body" => "simulate aborted turn"
+      })
+
+    assert {:error, {:codex_turn_aborted, "interrupted"}} =
+             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+    launch_request = Demand.get_launch_request!(records.launch_request.id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.error =~ "codex_turn_aborted"
+    assert launch_request.status == "ready"
+    assert launch_request.launch_mode == "direct_codex"
+  end
+
+  test "start_research_request_with_codex records client crashes as failed and retryable" do
+    source_repo = demand_source_repo_fixture()
+
+    template =
+      message_template_fixture(%{
+        "required_variables" => "repo_path",
+        "body" => "Follow {{agent_entrypoint}} in {{repo_path}}."
+      })
+
+    {:ok, records} =
+      Demand.create_source_launch_request(source_repo, template, %{
+        "risk_level" => "normal",
+        "status" => "ready",
+        "edited_body" => "simulate client crash"
+      })
+
+    assert {:error, {:codex_launch_unhandled_failure, {:error, "simulated codex client crash"}}} =
+             Demand.start_research_request_with_codex(records.launch_request, mode: :sync)
+
+    failed_run = Demand.get_research_run!(records.research_run.id)
+    launch_request = Demand.get_launch_request!(records.launch_request.id)
+
+    assert failed_run.status == "failed"
+    assert failed_run.error =~ "simulated codex client crash"
+    assert launch_request.status == "ready"
+    assert launch_request.launch_mode == "direct_codex"
+  end
+
   test "create_session_followup links a message to an existing Codex session" do
     source_repo = demand_source_repo_fixture()
 

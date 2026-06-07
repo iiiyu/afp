@@ -1001,6 +1001,20 @@ defmodule Afp.Factory.Demand do
   end
 
   def complete_codex_launch(launch_request_id, opts \\ []) do
+    do_complete_codex_launch(launch_request_id, opts)
+  rescue
+    exception ->
+      persist_codex_launch_unhandled_failure(
+        launch_request_id,
+        {:error, Exception.message(exception)},
+        __STACKTRACE__
+      )
+  catch
+    kind, reason ->
+      persist_codex_launch_unhandled_failure(launch_request_id, {kind, reason}, __STACKTRACE__)
+  end
+
+  defp do_complete_codex_launch(launch_request_id, opts) do
     launch_request = get_launch_request!(launch_request_id)
 
     with {:ok, launch_context} <- codex_launch_context(launch_request) do
@@ -1016,6 +1030,17 @@ defmodule Afp.Factory.Demand do
           error
       end
     end
+  end
+
+  defp persist_codex_launch_unhandled_failure(launch_request_id, reason, stacktrace) do
+    failure_reason = {:codex_launch_unhandled_failure, reason}
+    error_text = inspect(failure_reason) <> "\n\n" <> Exception.format_stacktrace(stacktrace)
+
+    with {:ok, launch_context} <- codex_launch_context(get_launch_request!(launch_request_id)) do
+      persist_codex_launch_failure(launch_context, error_text)
+    end
+
+    {:error, failure_reason}
   end
 
   defp codex_launch_mode(opts) do
@@ -1365,6 +1390,14 @@ defmodule Afp.Factory.Demand do
     error_text = inspect(reason)
 
     Repo.transaction(fn ->
+      launch_request =
+        launch_context.launch_request
+        |> CodexLaunchRequest.changeset(%{
+          "launch_mode" => "direct_codex",
+          "status" => "ready"
+        })
+        |> Repo.update!()
+
       launch_context.research_run
       |> ResearchRun.changeset(%{
         "status" => "failed",
@@ -1384,7 +1417,7 @@ defmodule Afp.Factory.Demand do
 
       Events.record_event(
         "codex_launch_request",
-        launch_context.launch_request.id,
+        launch_request.id,
         "launch_request_failed",
         %{reason: error_text}
       )

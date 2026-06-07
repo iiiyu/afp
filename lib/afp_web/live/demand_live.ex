@@ -1646,6 +1646,12 @@ defmodule AfpWeb.DemandLive do
   defp launch_error({:codex_turn_incomplete, status}),
     do: "Codex turn did not complete; status was #{status}."
 
+  defp launch_error({:codex_turn_aborted, reason}),
+    do: "Codex turn was stopped before completion: #{reason}."
+
+  defp launch_error({:codex_turn_failed, reason}),
+    do: "Codex turn failed before completion: #{reason}."
+
   defp launch_error(:codex_turn_completion_unrecognized),
     do: "Codex turn completed with an unrecognized payload."
 
@@ -1661,6 +1667,9 @@ defmodule AfpWeb.DemandLive do
 
   defp launch_error({:codex_launch_supervisor_exit, _reason}),
     do: "Codex launch supervisor exited before the task could start."
+
+  defp launch_error({:codex_launch_unhandled_failure, _reason}),
+    do: "Codex launch crashed before completion. The run was marked failed and can be retried."
 
   defp launch_error({:codex_request_error, %{"message" => message}}), do: message
   defp launch_error(reason), do: "Could not launch Codex: #{inspect(reason)}"
