@@ -1027,17 +1027,77 @@ defmodule Afp.Factory.Demand do
   end
 
   defp start_codex_launch_worker(launch_request_id, opts) do
-    try do
-      Task.Supervisor.start_child(codex_launch_supervisor(opts), fn ->
-        complete_codex_launch(launch_request_id, opts)
-      end)
-    catch
-      :exit, reason -> {:error, {:codex_launch_supervisor_exit, reason}}
+    supervisor = codex_launch_supervisor(opts)
+
+    with :ok <- ensure_codex_launch_supervisor(supervisor) do
+      safe_start_codex_launch_worker(supervisor, launch_request_id, opts)
     end
   end
 
   defp codex_launch_supervisor(opts) do
     Keyword.get(opts, :supervisor, @codex_launch_supervisor)
+  end
+
+  defp ensure_codex_launch_supervisor(@codex_launch_supervisor) do
+    if Process.whereis(@codex_launch_supervisor) do
+      :ok
+    else
+      start_default_codex_launch_supervisor()
+    end
+  end
+
+  defp ensure_codex_launch_supervisor(supervisor) when is_atom(supervisor) do
+    if Process.whereis(supervisor) do
+      :ok
+    else
+      {:error, {:codex_launch_supervisor_missing, supervisor}}
+    end
+  end
+
+  defp ensure_codex_launch_supervisor(_supervisor), do: :ok
+
+  defp start_default_codex_launch_supervisor do
+    child_spec =
+      Supervisor.child_spec({Task.Supervisor, name: @codex_launch_supervisor},
+        id: @codex_launch_supervisor
+      )
+
+    safe_supervisor_call(fn -> Supervisor.start_child(Afp.Supervisor, child_spec) end)
+    |> case do
+      {:ok, _pid} -> :ok
+      {:ok, _pid, _info} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
+      {:error, {:already_present, _id}} -> restart_default_codex_launch_supervisor()
+      {:error, reason} -> {:error, {:codex_launch_supervisor_start_failed, reason}}
+    end
+  end
+
+  defp restart_default_codex_launch_supervisor do
+    safe_supervisor_call(fn ->
+      Supervisor.restart_child(Afp.Supervisor, @codex_launch_supervisor)
+    end)
+    |> case do
+      {:ok, _pid} -> :ok
+      {:ok, _pid, _info} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
+      {:error, reason} -> {:error, {:codex_launch_supervisor_start_failed, reason}}
+    end
+  end
+
+  defp safe_start_codex_launch_worker(supervisor, launch_request_id, opts) do
+    safe_supervisor_call(fn ->
+      Task.Supervisor.start_child(supervisor, fn ->
+        complete_codex_launch(launch_request_id, opts)
+      end)
+    end)
+  end
+
+  defp safe_supervisor_call(fun) when is_function(fun, 0) do
+    try do
+      fun.()
+    catch
+      :exit, reason -> {:error, {:codex_launch_supervisor_exit, reason}}
+    end
   end
 
   defp codex_completion_opts(opts) do

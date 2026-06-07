@@ -11,7 +11,10 @@ defmodule Afp.Application do
       AfpWeb.Telemetry,
       Afp.Repo,
       {Oban, Application.fetch_env!(:afp, Oban)},
-      {Task.Supervisor, name: Afp.Factory.Demand.CodexLaunchSupervisor},
+      Supervisor.child_spec(
+        {Task.Supervisor, name: Afp.Factory.Demand.CodexLaunchSupervisor},
+        id: Afp.Factory.Demand.CodexLaunchSupervisor
+      ),
       {DNSCluster, query: Application.get_env(:afp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Afp.PubSub},
       # Start a worker by calling: Afp.Worker.start_link(arg)

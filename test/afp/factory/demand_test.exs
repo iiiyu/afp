@@ -308,7 +308,7 @@ defmodule Afp.Factory.DemandTest do
         "status" => "ready"
       })
 
-    assert {:error, {:codex_launch_supervisor_exit, _reason}} =
+    assert {:error, {:codex_launch_supervisor_missing, MissingCodexLaunchSupervisor}} =
              Demand.start_research_request_with_codex(records.launch_request,
                mode: :async,
                supervisor: MissingCodexLaunchSupervisor
