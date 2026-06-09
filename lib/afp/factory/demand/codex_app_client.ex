@@ -31,7 +31,10 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     "upsert_sources",
     "upsert_score",
     "upsert_scores",
-    "link_artifact"
+    "link_artifact",
+    "upsert_opportunity",
+    "upsert_run",
+    "link_file"
   ]
   @safe_read_commands ~w(cat date find head ls pwd rg sed tail wc)
   @dangerous_command_markers [
@@ -1175,6 +1178,10 @@ defmodule Afp.Factory.Demand.CodexAppClient do
 
   defp close_port(port) do
     if Port.info(port), do: Port.close(port)
+  rescue
+    ArgumentError -> :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   defp default_timeout_ms do

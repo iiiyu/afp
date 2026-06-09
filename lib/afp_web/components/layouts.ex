@@ -53,7 +53,11 @@ defmodule AfpWeb.Layouts do
         <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-4 lg:px-3">
           <nav class="flex flex-col gap-1 text-sm">
             <.nav_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
-            <.nav_item navigate={~p"/demand"} icon="hero-magnifying-glass" label="Demand" />
+            <.nav_item
+              navigate={~p"/opportunities"}
+              icon="hero-magnifying-glass"
+              label="Opportunities"
+            />
             <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
             <.nav_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
             <.nav_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
@@ -78,7 +82,11 @@ defmodule AfpWeb.Layouts do
       <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
         <div class="flex items-center justify-between gap-1">
           <.nav_icon_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
-          <.nav_icon_item navigate={~p"/demand"} icon="hero-magnifying-glass" label="Demand" />
+          <.nav_icon_item
+            navigate={~p"/opportunities"}
+            icon="hero-magnifying-glass"
+            label="Opportunities"
+          />
           <.nav_icon_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
           <.nav_icon_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
           <.nav_icon_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />

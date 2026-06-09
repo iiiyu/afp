@@ -5,8 +5,8 @@
 ## Architecture Summary
 
 This folder contains the one-person app factory domain model. Contexts are
-split by PRD boundary: demand, portfolio, work, sessions, evidence, releases,
-metrics, settings, events, and dashboard read models. State transitions stay in
+split by PRD boundary: opportunities, demand, portfolio, work, sessions,
+evidence, releases, metrics, settings, events, and dashboard read models. State transitions stay in
 contexts so LiveViews remain thin and older API/UI paths keep consistent
 behavior.
 
@@ -16,6 +16,7 @@ behavior.
 - `factory/schema.ex` - UUID and timestamp schema defaults.
 - `factory/json_data.ex` - Flexible jsonb Ecto type.
 - `factory/events.ex` and `factory/events/event.ex` - Append-only audit log and PubSub broadcasts.
+- `factory/opportunities.ex` and `factory/opportunities/README.md` - Portable opportunity repo setup, health inspection, repo-local `base.sqlite` reads/writes, Codex launch progress, and Markdown/image file previews.
 - `factory/demand.ex` plus `factory/demand/source_repo.ex`, `factory/demand/source_repo_scaffold.ex`, `factory/demand/source_repo_adapter.ex`, `factory/demand/codex_app_client.ex`, `factory/demand/schedule_research_worker.ex`, `factory/demand/candidate.ex`, `factory/demand/research_run.ex`, `factory/demand/message_template.ex`, `factory/demand/sent_message.ex`, `factory/demand/demand_item.ex`, and `factory/demand/codex_launch_request.ex` - Demand source repository contracts, standard source repo scaffolding, manifest-gated repo-local SQLite candidate reads, supervised long-running Codex app-server JSON-RPC launches with manifest-bounded approval replies, stdout transport diagnostics, early thread/turn progress persistence, per-attempt stale-startup reconciliation, scheduled due-scan draft handoffs, normalized candidate indexing, research-run/message history, pre-app demand capture, validation launch requests, and promotion into apps.
 - `factory/portfolio.ex` and `factory/portfolio/app.ex` - App inventory, lifecycle, business posture, and repo matching.
 - `factory/work.ex`, `factory/work/ticket.ex`, and `factory/work/harness_packet.ex` - Ticket workflow and harness packet contracts.

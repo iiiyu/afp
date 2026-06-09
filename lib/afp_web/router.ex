@@ -19,6 +19,8 @@ defmodule AfpWeb.Router do
 
     live "/", TodayLive
     live "/today", TodayLive
+    live "/opportunities", OpportunitiesLive
+    live "/opportunities/:id", OpportunitiesLive
     live "/demand", DemandLive
     live "/apps", AppLive.Index
     live "/apps/:id", AppLive.Show

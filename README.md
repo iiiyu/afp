@@ -25,8 +25,12 @@ attach evidence, and decide whether an app or release is allowed to advance.
 
 - Portfolio inventory: app name, repository path, platform, lifecycle stage,
   business posture, health state, current version/build, and next action.
-- Demand management: pre-app opportunities, source evidence, target user/job,
-  validation action, bounded Codex launch requests, and promotion into apps.
+- Opportunities: the primary discovery surface for turning a simple idea, need,
+  or URL into a portable opportunity folder, repo-local `base.sqlite` state,
+  Codex run status, and Markdown/image review.
+- Demand management: the older pre-app demand pipeline with source evidence,
+  target user/job, validation action, bounded Codex launch requests, and
+  promotion into apps.
 - Demand source repositories: external research repos that keep detailed scans,
   evidence, candidate reports, product packages, prototype assets, and required
   repo-local SQLite data while AFP indexes and routes their state through
@@ -113,6 +117,7 @@ flowchart LR
     Codex["Codex hooks or JSONL spool"] --> Intake["Local intake endpoint and worker"]
 
     UI --> Dashboard["Factory.Dashboard"]
+    UI --> Opportunities["Factory.Opportunities"]
     UI --> Demand["Factory.Demand"]
     UI --> Portfolio["Factory.Portfolio"]
     UI --> Work["Factory.Work"]
@@ -130,6 +135,8 @@ flowchart LR
     Settings --> Repositories
 
     Dashboard --> Repo["Afp.Repo"]
+    Opportunities --> Settings
+    Opportunities --> Events
     Demand --> Repo
     Portfolio --> Repo
     Work --> Repo
@@ -199,6 +206,12 @@ See [`docs/database_schema.md`](docs/database_schema.md) for table-level
 details. Hook events and settings are also persisted, but they are processing and
 configuration records rather than direct ownership edges in the core domain.
 
+Opportunity discovery has a separate portable repo contract: AFP stores the
+configured repo path in `settings`, while the external repo stores
+`base.sqlite`, `opportunities/[uuid]/README.md`, generated files, `AGENTS.md`,
+and `.skills/`. See
+[`docs/opportunities-repo-contract.md`](docs/opportunities-repo-contract.md).
+
 ## Phase 2 Dogfood Loop
 
 Phase 2 adds the daily operating loop needed for real dogfooding:
@@ -224,7 +237,11 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
 
 - **Today**: focus queue as the primary command surface, with supporting review,
   demand, release, business, repository, and session queues grouped below it.
-- **Demand**: upstream demand-source console first, with standard source repo
+- **Opportunities**: primary discovery console with first-run repo setup,
+  existing repo health checks, simple input or URL launch, opportunity table,
+  detail file browser, and live Codex run state backed by repo-local
+  `base.sqlite`.
+- **Demand**: legacy upstream demand-source console, with standard source repo
   scaffolding, configured research repos, editable source schedules, scheduled
   due-scan drafts, manual idea/URL research handoffs, candidate pickup, product
   packages, package-file verification, launch requests, existing-session

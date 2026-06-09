@@ -30,8 +30,26 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `growth_experiments` - Manual post-launch growth experiments with hypothesis, metric, status, priority, review due date, and outcome note.
 - `maintenance_obligations` - Due operational work for live apps, including category, status, priority, due date, recurrence, notes, and completion timestamp.
 - `events` - Append-only audit log for state changes, intake, and operator decisions.
-- `settings` - jsonb-backed local configuration, including repository roots, Codex intake settings, transcript privacy, and JSONL spool offsets.
+- `settings` - jsonb-backed local configuration, including repository roots, the configured opportunities repo path and latest health snapshot, Codex intake settings, transcript privacy, and JSONL spool offsets.
 - `oban_jobs` and related Oban database objects - Background job storage for retryable/local intake tasks.
+
+## External Opportunity Repo SQLite
+
+The `/opportunities` surface does not add PostgreSQL tables for individual
+opportunities. AFP persists the selected repo path in `settings` and reads or
+writes the repo-local `base.sqlite` database described in
+[`docs/opportunities-repo-contract.md`](opportunities-repo-contract.md).
+
+`base.sqlite` contains:
+
+- `repo_metadata` - schema version, display name, and repo metadata.
+- `opportunities` - raw input, normalized title, source URL, status, stage,
+  route, score, current run, Codex session, latest summary, error, and timestamps.
+- `opportunity_runs` - Codex launch prompt, run status, stage,
+  session/thread/turn metadata, transcript path, final answer, error, payload,
+  and timestamps.
+- `opportunity_files` - Markdown/image files under `opportunities/[uuid]/`,
+  with relative path, file type, size, mtime, and timestamps.
 
 ## Important Constraints
 
@@ -45,6 +63,7 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `demand_candidates.package_path` points back into the source repo; package verification requires the app-lane or game-lane package files before AFP marks the candidate `package_ready`.
 - `demand_research_runs` can link to a source repo, optional candidate, message template, launch request, and Codex session while leaving detailed run artifacts in the source repo.
 - `demand_sent_messages` belong to a research run and can link to the launch request/session used to hand off a new message or continue an existing Codex session. Direct Codex launches store compact JSON-RPC thread/turn metadata in `payload`.
+- The configured opportunities repo is stored as one `settings` value; the portable opportunity rows, run rows, and file index stay in the external repo's `base.sqlite`.
 - `demand_message_templates.name` is unique.
 - Source repo index refresh reads the manifest-declared repo-local SQLite database only when `sqlite.allowed_operations` includes `read_index` or `read_candidates`; imported rows update `demand_candidates` and record a completed `repo_audit` research run.
 - Scheduled demand research checks healthy, schedule-enabled source repos against `schedule_interval_hours` and `last_run_at`, then creates draft `scheduled_scan` launch requests for due sources without sending them.
@@ -73,6 +92,9 @@ validated in Ecto changesets:
 - Demand research run status: `draft`, `ready`, `launched`, `running`, `completed`, `failed`, `cancelled`, `reviewed`.
 - Demand message target: `new_session`, `existing_session`, `manual_handoff`.
 - Demand sent message status: `draft`, `confirmed`, `sent`, `accepted`, `failed`, `superseded`.
+- Opportunity repo health: `healthy`, `missing`, `sqlite_missing`, `sqlite_invalid`, `agents_missing`, `invalid_structure`.
+- Opportunity status in `base.sqlite`: `captured`, `queued`, `running`, `researched`, `failed`.
+- Opportunity run status in `base.sqlite`: `queued`, `running`, `completed`, `failed`.
 - Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.
 - Codex launch mode: `manual_handoff`, `direct_codex`.
 - Business posture: `unknown`, `grow`, `maintain`, `fix`, `harvest`, `pause`, `kill`.
