@@ -43,9 +43,10 @@ writes the repo-local `base.sqlite` database described in
 `base.sqlite` contains:
 
 - `repo_metadata` - schema version, display name, and repo metadata.
-- `opportunities` - raw input, normalized title, source URL, status, stage,
-  route, score, current run, Codex session, latest summary, error, and timestamps.
-- `opportunity_runs` - Codex launch prompt, run status, stage,
+- `opportunities` - raw input, normalized title, source URL, launch agent
+  (`codex` or `claude_code`), status, stage, route, score, current run, agent
+  session, latest summary, error, and timestamps.
+- `opportunity_runs` - agent launch prompt, launch agent, run status, stage,
   session/thread/turn metadata, transcript path, final answer, error, payload,
   and timestamps.
 - `opportunity_files` - Markdown/image files under `opportunities/[uuid]/`,

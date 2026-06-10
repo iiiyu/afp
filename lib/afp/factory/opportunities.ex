@@ -1,5 +1,5 @@
-# @input  - Operator opportunity prompts, configured repo paths, repo-local SQLite, and Codex app-server progress
-# @output - Opportunity repo scaffolding, health inspection, opportunity records, file previews, and Codex launch state
+# @input  - Operator opportunity prompts, configured repo paths, repo-local SQLite, and agent launch progress
+# @output - Opportunity repo scaffolding, health inspection, opportunity records, file previews, and Codex/Claude Code launch state
 # @pos    - Context boundary for the portable opportunities repository workflow
 defmodule Afp.Factory.Opportunities do
   require Logger
@@ -7,6 +7,7 @@ defmodule Afp.Factory.Opportunities do
   alias Afp.Factory
   alias Afp.Factory.Demand.CodexAppClient
   alias Afp.Factory.Events
+  alias Afp.Factory.Opportunities.ClaudeCodeClient
   alias Afp.Factory.Settings
 
   @setting_key "opportunity_repo"
@@ -15,8 +16,11 @@ defmodule Afp.Factory.Opportunities do
   @skills_path ".skills"
   @opportunities_path "opportunities"
   @generated_files_path "generated_other_files"
-  @schema_version 1
+  @schema_version 2
   @required_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
+  @agent_tables ~w(opportunities opportunity_runs)
+  @agents ~w(codex claude_code)
+  @default_agent "codex"
   @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
   @image_extensions ~w(.png .jpg .jpeg .gif .webp)
   @markdown_extensions ~w(.md .markdown)
@@ -103,7 +107,7 @@ defmodule Afp.Factory.Opportunities do
            sqlite_json(
              repo,
              """
-             SELECT id, opportunity_id, run_type, status, stage, codex_session_id,
+             SELECT id, opportunity_id, run_type, agent, status, stage, codex_session_id,
                     codex_thread_id, codex_turn_id, transcript_path, final_answer,
                     error, started_at, completed_at, created_at, updated_at, payload_json
              FROM opportunity_runs
@@ -117,19 +121,32 @@ defmodule Afp.Factory.Opportunities do
 
   def create_opportunity_with_codex(attrs, opts \\ [])
 
-  def create_opportunity_with_codex(attrs, opts) when is_map(attrs) do
+  def create_opportunity_with_codex(attrs, opts) when is_map(attrs),
+    do: create_opportunity(Map.put(attrs, "agent", "codex"), opts)
+
+  def create_opportunity_with_codex(_attrs, _opts), do: {:error, :raw_input_required}
+
+  def create_opportunity(attrs, opts \\ [])
+
+  def create_opportunity(attrs, opts) when is_map(attrs) do
     with {:ok, repo} <- healthy_repo(),
          {:ok, raw_input} <- raw_input(attrs),
-         {:ok, opportunity} <- create_opportunity_record(repo, raw_input),
-         {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input) do
-      case start_codex_run(repo, opportunity, run, opts) do
+         {:ok, agent} <- launch_agent(attrs),
+         {:ok, opportunity} <- create_opportunity_record(repo, raw_input, agent),
+         {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input, agent) do
+      case start_agent_run(repo, opportunity, run, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> {:error, reason}
       end
     end
   end
 
-  def create_opportunity_with_codex(_attrs, _opts), do: {:error, :raw_input_required}
+  def create_opportunity(_attrs, _opts), do: {:error, :raw_input_required}
+
+  def supported_agents, do: @agents
+
+  def agent_label("claude_code"), do: "Claude Code"
+  def agent_label(_agent), do: "Codex"
 
   def list_opportunity_files(opportunity_id) do
     with {:ok, repo} <- healthy_repo(),
@@ -353,6 +370,7 @@ defmodule Afp.Factory.Opportunities do
          table_names <- Enum.map(rows, &Map.get(&1, "name")),
          missing <- Enum.reject(@required_tables, &(&1 in table_names)),
          :ok <- ensure_no_missing_tables(missing),
+         :ok <- ensure_agent_columns(db_path),
          {:ok, version_rows} <-
            sqlite_json_path(
              db_path,
@@ -372,6 +390,40 @@ defmodule Afp.Factory.Opportunities do
 
   defp ensure_no_missing_tables([]), do: :ok
   defp ensure_no_missing_tables(missing), do: {:error, {:missing_tables, missing}}
+
+  # Upgrades schema v1 repos in place: v2 adds an `agent` column to the
+  # opportunities and opportunity_runs tables.
+  defp ensure_agent_columns(db_path) do
+    column_sql =
+      Enum.map_join(@agent_tables, "\nUNION ALL\n", fn table ->
+        "SELECT '#{table}' AS table_name, name FROM pragma_table_info('#{table}')"
+      end)
+
+    with {:ok, rows} <- sqlite_json_path(db_path, column_sql) do
+      @agent_tables
+      |> Enum.reject(fn table ->
+        Enum.any?(rows, &(&1["table_name"] == table and &1["name"] == "agent"))
+      end)
+      |> Enum.map(&"ALTER TABLE #{&1} ADD COLUMN agent TEXT NOT NULL DEFAULT 'codex';")
+      |> case do
+        [] ->
+          :ok
+
+        statements ->
+          sqlite_exec_path(db_path, Enum.join(statements ++ [schema_version_upgrade_sql()], "\n"))
+      end
+    end
+  end
+
+  defp schema_version_upgrade_sql do
+    """
+    INSERT INTO repo_metadata (key, value, updated_at)
+    VALUES ('schema_version', '#{@schema_version}', #{sql_value(now_iso())})
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at;
+    """
+  end
 
   defp target_repo_path(attrs) do
     case attrs |> attr_value("repo_path") |> Factory.trim_nil() do
@@ -471,7 +523,7 @@ defmodule Afp.Factory.Opportunities do
       end
   end
 
-  defp create_opportunity_record(repo, raw_input) do
+  defp create_opportunity_record(repo, raw_input, agent) do
     opportunity_id = Ecto.UUID.generate()
     title = title_from_input(raw_input)
     source_url = first_url(raw_input)
@@ -483,10 +535,11 @@ defmodule Afp.Factory.Opportunities do
              repo,
              """
              INSERT INTO opportunities
-               (id, title, raw_input, source_url, status, stage, created_at, updated_at)
+               (id, title, raw_input, source_url, agent, status, stage, created_at, updated_at)
              VALUES
                (#{sql_value(opportunity_id)}, #{sql_value(title)}, #{sql_value(raw_input)},
-                #{sql_value(source_url)}, 'captured', 'created', #{sql_value(now)}, #{sql_value(now)});
+                #{sql_value(source_url)}, #{sql_value(agent)}, 'captured', 'created',
+                #{sql_value(now)}, #{sql_value(now)});
              """
            ),
          :ok <- refresh_file_index(repo, opportunity_id) do
@@ -495,6 +548,7 @@ defmodule Afp.Factory.Opportunities do
         "title" => title,
         "raw_input" => raw_input,
         "source_url" => source_url,
+        "agent" => agent,
         "status" => "captured",
         "stage" => "created",
         "created_at" => now,
@@ -503,6 +557,7 @@ defmodule Afp.Factory.Opportunities do
 
       Events.record_event("opportunity", opportunity_id, "opportunity_created", %{
         title: title,
+        agent: agent,
         repo_path: repo["repo_path"]
       })
 
@@ -523,25 +578,26 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
-  defp create_opportunity_run(repo, opportunity, raw_input) do
+  defp create_opportunity_run(repo, opportunity, raw_input, agent) do
     run_id = Ecto.UUID.generate()
     now = now_iso()
-    prompt = codex_prompt(repo, opportunity, raw_input)
+    prompt = agent_prompt(repo, opportunity, raw_input)
 
     with :ok <-
            sqlite_exec(
              repo,
              """
              INSERT INTO opportunity_runs
-               (id, opportunity_id, run_type, status, stage, prompt, created_at, updated_at)
+               (id, opportunity_id, run_type, agent, status, stage, prompt, created_at, updated_at)
              VALUES
                (#{sql_value(run_id)}, #{sql_value(opportunity["id"])}, 'initial_research',
-                'queued', 'queued', #{sql_value(prompt)}, #{sql_value(now)}, #{sql_value(now)});
+                #{sql_value(agent)}, 'queued', 'queued', #{sql_value(prompt)},
+                #{sql_value(now)}, #{sql_value(now)});
 
              UPDATE opportunities
              SET current_run_id = #{sql_value(run_id)},
                  status = 'queued',
-                 stage = 'Codex launch queued',
+                 stage = '#{agent_label(agent)} launch queued',
                  updated_at = #{sql_value(now)}
              WHERE id = #{sql_value(opportunity["id"])};
              """
@@ -550,6 +606,7 @@ defmodule Afp.Factory.Opportunities do
         "id" => run_id,
         "opportunity_id" => opportunity["id"],
         "run_type" => "initial_research",
+        "agent" => agent,
         "status" => "queued",
         "stage" => "queued",
         "prompt" => prompt,
@@ -558,17 +615,20 @@ defmodule Afp.Factory.Opportunities do
       }
 
       Events.record_event("opportunity_run", run_id, "opportunity_run_queued", %{
-        opportunity_id: opportunity["id"]
+        opportunity_id: opportunity["id"],
+        agent: agent
       })
 
       {:ok, run}
     end
   end
 
-  defp start_codex_run(repo, opportunity, run, opts) do
-    case codex_launch_mode(opts) do
+  defp start_agent_run(repo, opportunity, run, opts) do
+    agent = run["agent"] || @default_agent
+
+    case launch_mode(opts) do
       :sync ->
-        case complete_codex_run(repo, opportunity, run, opts) do
+        case complete_agent_run(repo, opportunity, run, opts) do
           {:ok, completion} ->
             {:ok, Map.merge(completion, %{opportunity: fetch_opportunity!(opportunity["id"])})}
 
@@ -580,50 +640,51 @@ defmodule Afp.Factory.Opportunities do
         with :ok <- ensure_codex_launch_supervisor(),
              {:ok, pid} <-
                safe_start_codex_launch_worker(fn ->
-                 complete_codex_run(repo, opportunity, run, opts)
+                 complete_agent_run(repo, opportunity, run, opts)
                end) do
-          {:ok, %{opportunity: opportunity, run: run, codex_launch_worker_pid: pid}}
+          {:ok, %{opportunity: opportunity, run: run, launch_worker_pid: pid}}
         else
           {:error, reason} ->
-            mark_codex_run_failed(repo, opportunity["id"], run["id"], reason)
+            mark_agent_run_failed(repo, opportunity["id"], run["id"], agent, reason)
             {:error, reason}
         end
     end
   end
 
-  defp complete_codex_run(repo, opportunity, run, opts) do
-    persist_codex_run_started(repo, opportunity["id"], run["id"])
+  defp complete_agent_run(repo, opportunity, run, opts) do
+    agent = run["agent"] || @default_agent
+    persist_agent_run_started(repo, opportunity["id"], run["id"], agent)
 
-    attrs = codex_launch_attrs(repo, opportunity, run)
+    attrs = agent_launch_attrs(repo, opportunity, run)
 
     opts =
       opts
       |> Keyword.drop([:mode, :supervisor])
       |> Keyword.put(:on_launch_event, fn event, payload ->
-        persist_codex_progress(repo, opportunity["id"], run["id"], event, payload)
+        persist_agent_progress(repo, opportunity["id"], run["id"], agent, event, payload)
       end)
 
-    case codex_app_client().launch_new_turn(attrs, opts) do
-      {:ok, codex_result} ->
-        persist_codex_success(repo, opportunity["id"], run["id"], codex_result)
+    case launch_client(agent).launch_new_turn(attrs, opts) do
+      {:ok, launch_result} ->
+        persist_agent_success(repo, opportunity["id"], run["id"], agent, launch_result)
 
       {:error, reason} ->
-        mark_codex_run_failed(repo, opportunity["id"], run["id"], reason)
+        mark_agent_run_failed(repo, opportunity["id"], run["id"], agent, reason)
         {:error, reason}
     end
   rescue
     exception ->
-      reason = {:codex_launch_unhandled_failure, Exception.message(exception)}
-      mark_codex_run_failed(repo, opportunity["id"], run["id"], reason)
+      reason = {:agent_launch_unhandled_failure, Exception.message(exception)}
+      mark_agent_run_failed(repo, opportunity["id"], run["id"], run["agent"], reason)
       {:error, reason}
   catch
     kind, reason ->
-      failure = {:codex_launch_unhandled_failure, {kind, reason}}
-      mark_codex_run_failed(repo, opportunity["id"], run["id"], failure)
+      failure = {:agent_launch_unhandled_failure, {kind, reason}}
+      mark_agent_run_failed(repo, opportunity["id"], run["id"], run["agent"], failure)
       {:error, failure}
   end
 
-  defp codex_launch_mode(opts) do
+  defp launch_mode(opts) do
     case Keyword.get(opts, :mode, Application.get_env(:afp, :codex_launch_mode, :async)) do
       :sync -> :sync
       "sync" -> :sync
@@ -663,7 +724,7 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
-  defp persist_codex_run_started(repo, opportunity_id, run_id) do
+  defp persist_agent_run_started(repo, opportunity_id, run_id, agent) do
     now = now_iso()
 
     :ok =
@@ -680,7 +741,7 @@ defmodule Afp.Factory.Opportunities do
 
         UPDATE opportunities
         SET status = 'running',
-            stage = 'Codex starting',
+            stage = '#{agent_label(agent)} starting',
             current_run_id = #{sql_value(run_id)},
             updated_at = #{sql_value(now)},
             error = NULL
@@ -695,7 +756,7 @@ defmodule Afp.Factory.Opportunities do
     {:ok, %{run_id: run_id}}
   end
 
-  defp persist_codex_progress(repo, opportunity_id, run_id, :thread_started, payload) do
+  defp persist_agent_progress(repo, opportunity_id, run_id, agent, :thread_started, payload) do
     now = now_iso()
     thread = get_in(payload, ["result", "thread"]) || %{}
     session_id = thread["sessionId"] || thread["id"]
@@ -715,7 +776,7 @@ defmodule Afp.Factory.Opportunities do
 
         UPDATE opportunities
         SET status = 'running',
-            stage = 'Codex thread started',
+            stage = '#{agent_label(agent)} session started',
             codex_session_id = #{sql_value(session_id)},
             updated_at = #{sql_value(now)}
         WHERE id = #{sql_value(opportunity_id)};
@@ -724,13 +785,14 @@ defmodule Afp.Factory.Opportunities do
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_thread_started", %{
       opportunity_id: opportunity_id,
+      agent: agent,
       codex_session_id: session_id
     })
 
     :ok
   end
 
-  defp persist_codex_progress(repo, opportunity_id, run_id, :turn_started, payload) do
+  defp persist_agent_progress(repo, opportunity_id, run_id, agent, :turn_started, payload) do
     now = now_iso()
     turn = get_in(payload, ["result", "turn"]) || %{}
 
@@ -747,7 +809,7 @@ defmodule Afp.Factory.Opportunities do
 
         UPDATE opportunities
         SET status = 'running',
-            stage = 'Codex turn started',
+            stage = '#{agent_label(agent)} turn started',
             updated_at = #{sql_value(now)}
         WHERE id = #{sql_value(opportunity_id)};
         """
@@ -755,22 +817,23 @@ defmodule Afp.Factory.Opportunities do
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_turn_started", %{
       opportunity_id: opportunity_id,
+      agent: agent,
       codex_turn_id: turn["id"]
     })
 
     :ok
   end
 
-  defp persist_codex_progress(_repo, _opportunity_id, _run_id, _event, _payload), do: :ok
+  defp persist_agent_progress(_repo, _opportunity_id, _run_id, _agent, _event, _payload), do: :ok
 
-  defp persist_codex_success(repo, opportunity_id, run_id, codex_result) do
+  defp persist_agent_success(repo, opportunity_id, run_id, agent, launch_result) do
     now = now_iso()
-    thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
-    turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
-    completed_turn = get_in(codex_result, [:turn_completed, "params", "turn"]) || %{}
+    thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
+    turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
+    completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
     session_id = thread["sessionId"] || thread["id"]
-    final_answer = Map.get(codex_result, :final_answer)
-    payload_json = Jason.encode!(codex_payload(codex_result, now))
+    final_answer = Map.get(launch_result, :final_answer)
+    payload_json = Jason.encode!(agent_payload(agent, launch_result, now))
 
     with :ok <- refresh_file_index(repo, opportunity_id),
          :ok <-
@@ -793,7 +856,7 @@ defmodule Afp.Factory.Opportunities do
 
              UPDATE opportunities
              SET status = 'researched',
-                 stage = 'Initial Codex research completed',
+                 stage = 'Initial #{agent_label(agent)} research completed',
                  codex_session_id = #{sql_value(session_id)},
                  latest_summary = #{sql_value(final_answer)},
                  updated_at = #{sql_value(now)},
@@ -803,14 +866,15 @@ defmodule Afp.Factory.Opportunities do
            ) do
       Events.record_event("opportunity_run", run_id, "opportunity_run_completed", %{
         opportunity_id: opportunity_id,
+        agent: agent,
         codex_session_id: session_id
       })
 
-      {:ok, %{run: fetch_run!(opportunity_id, run_id), codex_result: codex_result}}
+      {:ok, %{run: fetch_run!(opportunity_id, run_id), codex_result: launch_result}}
     end
   end
 
-  defp mark_codex_run_failed(repo, opportunity_id, run_id, reason) do
+  defp mark_agent_run_failed(repo, opportunity_id, run_id, agent, reason) do
     now = now_iso()
     error_text = inspect(reason)
 
@@ -827,7 +891,7 @@ defmodule Afp.Factory.Opportunities do
 
       UPDATE opportunities
       SET status = 'failed',
-          stage = 'Codex launch failed',
+          stage = '#{agent_label(agent)} launch failed',
           error = #{sql_value(error_text)},
           updated_at = #{sql_value(now)}
       WHERE id = #{sql_value(opportunity_id)};
@@ -836,19 +900,21 @@ defmodule Afp.Factory.Opportunities do
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_failed", %{
       opportunity_id: opportunity_id,
+      agent: agent,
       reason: error_text
     })
 
-    Logger.warning("Opportunity Codex launch failed",
+    Logger.warning("Opportunity agent launch failed",
       opportunity_id: opportunity_id,
       run_id: run_id,
+      agent: agent,
       reason: error_text
     )
 
     :ok
   end
 
-  defp codex_launch_attrs(repo, opportunity, run) do
+  defp agent_launch_attrs(repo, opportunity, run) do
     repo_path = repo["repo_path"]
 
     %{
@@ -887,19 +953,20 @@ defmodule Afp.Factory.Opportunities do
     }
   end
 
-  defp codex_payload(codex_result, now) do
-    thread = get_in(codex_result, [:thread_response, "result", "thread"]) || %{}
-    turn = get_in(codex_result, [:turn_response, "result", "turn"]) || %{}
-    completed_turn = get_in(codex_result, [:turn_completed, "params", "turn"]) || %{}
+  defp agent_payload(agent, launch_result, now) do
+    thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
+    turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
+    completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
 
     %{
-      "codex_launch_status" => "completed",
+      "agent" => agent,
+      "launch_status" => "completed",
       "session_id" => thread["sessionId"] || thread["id"],
       "thread_id" => thread["id"],
       "turn_id" => turn["id"] || completed_turn["id"],
       "turn_status" => completed_turn["status"],
       "transcript_path" => thread["path"],
-      "final_answer" => Map.get(codex_result, :final_answer),
+      "final_answer" => Map.get(launch_result, :final_answer),
       "completed_at" => now
     }
   end
@@ -1045,7 +1112,7 @@ defmodule Afp.Factory.Opportunities do
 
   defp opportunity_select_sql(where_clause \\ "") do
     """
-    SELECT id, title, raw_input, source_url, status, stage, route, total_score,
+    SELECT id, title, raw_input, source_url, agent, status, stage, route, total_score,
            current_run_id, codex_session_id, latest_summary, error, created_at, updated_at
     FROM opportunities
     #{where_clause}
@@ -1078,8 +1145,14 @@ defmodule Afp.Factory.Opportunities do
   defp sqlite_exec(_repo, ""), do: :ok
 
   defp sqlite_exec(repo, sql) do
-    db_path = Path.join(repo["repo_path"], @base_sqlite_path)
+    repo["repo_path"]
+    |> Path.join(@base_sqlite_path)
+    |> sqlite_exec_path(sql)
+  end
 
+  defp sqlite_exec_path(_db_path, ""), do: :ok
+
+  defp sqlite_exec_path(db_path, sql) do
     case System.cmd("sqlite3", [db_path, sql], stderr_to_stdout: true) do
       {_output, 0} -> :ok
       {output, _status} -> {:error, {:sqlite_error, String.trim(output)}}
@@ -1110,6 +1183,14 @@ defmodule Afp.Factory.Opportunities do
     case attrs |> attr_value("raw_input") |> Factory.trim_nil() do
       nil -> {:error, :raw_input_required}
       raw_input -> {:ok, raw_input}
+    end
+  end
+
+  defp launch_agent(attrs) do
+    case attrs |> attr_value("agent") |> Factory.trim_nil() do
+      nil -> {:ok, @default_agent}
+      agent when agent in @agents -> {:ok, agent}
+      agent -> {:error, {:unsupported_agent, agent}}
     end
   end
 
@@ -1152,6 +1233,7 @@ defmodule Afp.Factory.Opportunities do
   defp attr_atom("repo_path"), do: :repo_path
   defp attr_atom("display_name"), do: :display_name
   defp attr_atom("raw_input"), do: :raw_input
+  defp attr_atom("agent"), do: :agent
   defp attr_atom(_key), do: nil
 
   defp sql_value(nil), do: "NULL"
@@ -1168,7 +1250,11 @@ defmodule Afp.Factory.Opportunities do
 
   defp now_iso, do: Factory.now() |> DateTime.to_iso8601()
 
-  defp codex_app_client do
+  defp launch_client("claude_code") do
+    Application.get_env(:afp, :claude_code_client, ClaudeCodeClient)
+  end
+
+  defp launch_client(_agent) do
     Application.get_env(:afp, :codex_app_client, CodexAppClient)
   end
 
@@ -1198,6 +1284,7 @@ defmodule Afp.Factory.Opportunities do
       title TEXT NOT NULL,
       raw_input TEXT NOT NULL,
       source_url TEXT,
+      agent TEXT NOT NULL DEFAULT 'codex',
       status TEXT NOT NULL DEFAULT 'captured',
       stage TEXT NOT NULL DEFAULT 'created',
       route TEXT,
@@ -1214,6 +1301,7 @@ defmodule Afp.Factory.Opportunities do
       id TEXT PRIMARY KEY,
       opportunity_id TEXT NOT NULL,
       run_type TEXT NOT NULL DEFAULT 'initial_research',
+      agent TEXT NOT NULL DEFAULT 'codex',
       status TEXT NOT NULL DEFAULT 'queued',
       stage TEXT NOT NULL DEFAULT 'queued',
       prompt TEXT NOT NULL,
@@ -1262,8 +1350,8 @@ defmodule Afp.Factory.Opportunities do
 
     ## Current Stage
 
-    Captured by AFP. Codex should update this file as research evidence, scoring,
-    route decisions, and next actions become concrete.
+    Captured by AFP. The research agent should update this file as research
+    evidence, scoring, route decisions, and next actions become concrete.
 
     ## Expected Outputs
 
@@ -1275,7 +1363,7 @@ defmodule Afp.Factory.Opportunities do
     """
   end
 
-  defp codex_prompt(repo, opportunity, raw_input) do
+  defp agent_prompt(repo, opportunity, raw_input) do
     relative_root = opportunity_relative_root(opportunity["id"])
 
     """
@@ -1307,9 +1395,9 @@ defmodule Afp.Factory.Opportunities do
     # #{display_name} Agent Instructions
 
     This repository is an AFP opportunities repo. AFP owns the control-plane UI
-    and launches Codex turns. This repo owns portable opportunity evidence,
-    Markdown summaries, generated files, and the repo-local `#{@base_sqlite_path}`
-    index.
+    and launches research agent runs (Codex or Claude Code). This repo owns
+    portable opportunity evidence, Markdown summaries, generated files, and the
+    repo-local `#{@base_sqlite_path}` index.
 
     ## Required Structure
 
@@ -1346,16 +1434,16 @@ defmodule Afp.Factory.Opportunities do
 
     ## Structure
 
-    - `#{@base_sqlite_path}` stores the opportunity index, Codex runs, and file index.
+    - `#{@base_sqlite_path}` stores the opportunity index, agent runs, and file index.
     - `#{@opportunities_path}/[uuid]/README.md` stores the main Markdown summary for one opportunity.
     - `#{@opportunities_path}/[uuid]/#{@generated_files_path}/` stores additional Markdown notes and images.
-    - `#{@skills_path}/` stores repo-local skills Codex should read before research.
+    - `#{@skills_path}/` stores repo-local skills the research agent should read before research.
 
     ## base.sqlite Schema
 
     - `repo_metadata` keeps schema and display metadata.
-    - `opportunities` stores raw input, title, status, stage, route, score, session, and summary fields.
-    - `opportunity_runs` stores Codex launch/run status, prompt, transcript/session metadata, final answer, and error state.
+    - `opportunities` stores raw input, title, launch agent, status, stage, route, score, session, and summary fields.
+    - `opportunity_runs` stores agent launch/run status, prompt, transcript/session metadata, final answer, and error state.
     - `opportunity_files` stores Markdown/image files displayed by AFP.
     """
   end
@@ -1364,9 +1452,10 @@ defmodule Afp.Factory.Opportunities do
     """
     # Opportunity Repo Skills
 
-    Codex should read `opportunity-research/SKILL.md` before working on a new
-    opportunity. The skill captures the evidence-capped competitor discovery and
-    five-indicator scoring workflow used by AFP.
+    The research agent (Codex or Claude Code) should read
+    `opportunity-research/SKILL.md` before working on a new opportunity. The
+    skill captures the evidence-capped competitor discovery and five-indicator
+    scoring workflow used by AFP.
     """
   end
 
@@ -1375,7 +1464,7 @@ defmodule Afp.Factory.Opportunities do
     # Opportunity Research Skill
 
     Use this skill when AFP gives a simple demand input, idea, need, or URL and
-    asks Codex to create or update one opportunity folder.
+    asks the research agent to create or update one opportunity folder.
 
     ## Workflow
 

@@ -16,7 +16,7 @@ defmodule AfpWeb.OpportunitiesLive do
      |> assign(:page_title, "Opportunities")
      |> assign(:repo_form, to_form(%{}, as: :opportunity_repo))
      |> assign(:repo_template_form, to_form(%{}, as: :opportunity_repo_template))
-     |> assign(:opportunity_form, to_form(%{}, as: :opportunity))
+     |> assign(:opportunity_form, new_opportunity_form())
      |> assign(:selected_file_path, nil)
      |> assign(:selected_file, nil)
      |> load_opportunities(params)}
@@ -94,12 +94,14 @@ defmodule AfpWeb.OpportunitiesLive do
   end
 
   def handle_event("create_opportunity", %{"opportunity" => params}, socket) do
-    case Opportunities.create_opportunity_with_codex(params) do
+    case Opportunities.create_opportunity(params) do
       {:ok, %{opportunity: opportunity}} ->
+        agent_label = Opportunities.agent_label(opportunity["agent"])
+
         {:noreply,
          socket
-         |> put_flash(:info, "Opportunity created and Codex launch started.")
-         |> assign(:opportunity_form, to_form(%{}, as: :opportunity))
+         |> put_flash(:info, "Opportunity created and #{agent_label} launch started.")
+         |> assign(:opportunity_form, new_opportunity_form())
          |> push_navigate(to: ~p"/opportunities/#{opportunity["id"]}")}
 
       {:error, reason} ->
@@ -218,6 +220,14 @@ defmodule AfpWeb.OpportunitiesLive do
   defp healthy?(%{"health_state" => "healthy"}), do: true
   defp healthy?(_repo), do: false
 
+  defp new_opportunity_form do
+    to_form(%{"agent" => "codex"}, as: :opportunity)
+  end
+
+  defp agent_options do
+    Enum.map(Opportunities.supported_agents(), &{Opportunities.agent_label(&1), &1})
+  end
+
   defp configured_state(nil), do: "Not configured"
   defp configured_state(repo), do: repo["health_state"] || "unknown"
 
@@ -253,6 +263,7 @@ defmodule AfpWeb.OpportunitiesLive do
   defp repo_error(reason), do: "Could not configure opportunity repo: #{inspect(reason)}"
 
   defp launch_error(:raw_input_required), do: "Input is required."
+  defp launch_error({:unsupported_agent, agent}), do: "Unsupported agent: #{agent}."
   defp launch_error(:repo_path_required), do: "Configure an opportunity repo first."
 
   defp launch_error({:repo_unhealthy, state}),
@@ -268,7 +279,7 @@ defmodule AfpWeb.OpportunitiesLive do
         <.page_header
           eyebrow="Discovery"
           title="Opportunities"
-          subtitle="Portable opportunity research repo, simple prompt launch, Codex run state, and Markdown/image review."
+          subtitle="Portable opportunity research repo, simple prompt launch, Codex/Claude Code run state, and Markdown/image review."
         >
           <:meta>
             <.summary_item
@@ -277,7 +288,7 @@ defmodule AfpWeb.OpportunitiesLive do
               status={configured_state(@repo)}
             />
             <.summary_item title="Opportunities" value={@opportunity_count} hint="repo-local index" />
-            <.summary_item title="Running" value={@running_count} hint="active Codex work" />
+            <.summary_item title="Running" value={@running_count} hint="active agent work" />
           </:meta>
         </.page_header>
 
@@ -379,8 +390,14 @@ defmodule AfpWeb.OpportunitiesLive do
                       label="Input"
                       required
                     />
+                    <.input
+                      field={@opportunity_form[:agent]}
+                      type="select"
+                      label="Agent"
+                      options={agent_options()}
+                    />
                     <button class="inline-flex items-center gap-2 rounded bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">
-                      <.icon name="hero-play" class="size-4" /> Launch Codex
+                      <.icon name="hero-play" class="size-4" /> Launch agent
                     </button>
                   </.form>
                 </.panel>
@@ -568,7 +585,7 @@ defmodule AfpWeb.OpportunitiesLive do
                 </main>
 
                 <aside class="space-y-4">
-                  <.panel title="Codex Session">
+                  <.panel title="Agent Session">
                     <:subtitle>
                       <%= if @active_run do %>
                         Live run state
@@ -583,6 +600,10 @@ defmodule AfpWeb.OpportunitiesLive do
                       <div class="flex items-center gap-2">
                         <.status_badge status={@active_run["status"]} />
                         <span>{@active_run["stage"]}</span>
+                      </div>
+                      <div>
+                        <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
+                        {Opportunities.agent_label(@active_run["agent"])}
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
@@ -602,6 +623,10 @@ defmodule AfpWeb.OpportunitiesLive do
                         <span>{@selected_opportunity["stage"]}</span>
                       </div>
                       <div>
+                        <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
+                        {Opportunities.agent_label(@selected_opportunity["agent"])}
+                      </div>
+                      <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
                         {format_value(@selected_opportunity["codex_session_id"])}
                       </div>
@@ -618,6 +643,9 @@ defmodule AfpWeb.OpportunitiesLive do
                           <.status_badge status={run["status"]} />
                           <span class="font-medium text-slate-950 dark:text-white">
                             {run["run_type"]}
+                          </span>
+                          <span class="text-xs text-slate-500">
+                            {Opportunities.agent_label(run["agent"])}
                           </span>
                         </div>
                         <div class="mt-1 text-slate-600 dark:text-slate-300">

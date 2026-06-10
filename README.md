@@ -238,9 +238,9 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
 - **Today**: focus queue as the primary command surface, with supporting review,
   demand, release, business, repository, and session queues grouped below it.
 - **Opportunities**: primary discovery console with first-run repo setup,
-  existing repo health checks, simple input or URL launch, opportunity table,
-  detail file browser, and live Codex run state backed by repo-local
-  `base.sqlite`.
+  existing repo health checks, simple input or URL launch with a per-launch
+  agent choice (Codex or Claude Code), opportunity table, detail file browser,
+  and live agent run state backed by repo-local `base.sqlite`.
 - **Demand**: legacy upstream demand-source console, with standard source repo
   scaffolding, configured research repos, editable source schedules, scheduled
   due-scan drafts, manual idea/URL research handoffs, candidate pickup, product

@@ -80,4 +80,79 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert file.type == "markdown"
     assert file.content =~ "Receipt packet for restaurant shift disputes"
   end
+
+  test "create_opportunity with the claude_code agent records fake Claude Code completion" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    assert {:ok, result} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Local-first habit tracker for shift workers",
+               "agent" => "claude_code"
+             })
+
+    opportunity = result.opportunity
+
+    assert opportunity["agent"] == "claude_code"
+    assert opportunity["status"] == "researched"
+    assert opportunity["stage"] == "Initial Claude Code research completed"
+    assert opportunity["codex_session_id"] =~ "fake-claude-session-"
+    assert opportunity["latest_summary"] =~ "Fake Claude Code completed"
+
+    assert [run] = Opportunities.list_runs(opportunity["id"])
+    assert run["agent"] == "claude_code"
+    assert run["status"] == "completed"
+    assert run["codex_session_id"] == opportunity["codex_session_id"]
+  end
+
+  test "create_opportunity rejects unsupported agents" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    assert {:error, {:unsupported_agent, "gemini"}} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Some demand input",
+               "agent" => "gemini"
+             })
+  end
+
+  test "configured repos without the agent column are upgraded in place" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    db_path = Path.join(path, "base.sqlite")
+
+    {_output, 0} =
+      System.cmd(
+        "sqlite3",
+        [
+          db_path,
+          """
+          ALTER TABLE opportunities DROP COLUMN agent;
+          ALTER TABLE opportunity_runs DROP COLUMN agent;
+          UPDATE repo_metadata SET value = '1' WHERE key = 'schema_version';
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert {:ok, repo} = Opportunities.refresh_configured_repo()
+    assert repo["health_state"] == "healthy"
+    assert repo["schema_version"] == "2"
+
+    {output, 0} =
+      System.cmd("sqlite3", [db_path, "SELECT name FROM pragma_table_info('opportunities')"],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "agent"
+
+    assert {:ok, result} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Upgraded repo launch",
+               "agent" => "claude_code"
+             })
+
+    assert result.opportunity["agent"] == "claude_code"
+  end
 end

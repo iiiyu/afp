@@ -67,4 +67,31 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert detail_html =~ "Receipt packet for restaurant shift disputes"
     assert detail_html =~ "Fake Codex completed"
   end
+
+  test "creates an opportunity with the Claude Code agent", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, view, html} = live(conn, ~p"/opportunities")
+    assert html =~ "New Opportunity"
+
+    view
+    |> form("#opportunity-prompt-form",
+      opportunity: %{
+        raw_input: "Local-first habit tracker for shift workers",
+        agent: "claude_code"
+      }
+    )
+    |> render_submit()
+
+    [opportunity] = Opportunities.list_opportunities()
+    assert opportunity["agent"] == "claude_code"
+    assert opportunity["status"] == "researched"
+
+    {:ok, _detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+
+    assert detail_html =~ "Agent Session"
+    assert detail_html =~ "Claude Code"
+    assert detail_html =~ "Fake Claude Code completed"
+  end
 end
