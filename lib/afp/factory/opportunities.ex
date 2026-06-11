@@ -205,8 +205,9 @@ defmodule Afp.Factory.Opportunities do
     with {:ok, repo} <- healthy_repo(),
          {:ok, raw_input} <- raw_input(attrs),
          {:ok, agent} <- launch_agent(attrs),
+         model <- launch_model(attrs),
          {:ok, opportunity} <- create_opportunity_record(repo, raw_input, agent),
-         {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input, agent) do
+         {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input, agent, model) do
       case start_agent_run(repo, opportunity, run, opts) do
         {:ok, result} -> {:ok, result}
         {:error, reason} -> {:error, reason}
@@ -773,21 +774,22 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
-  defp create_opportunity_run(repo, opportunity, raw_input, agent) do
+  defp create_opportunity_run(repo, opportunity, raw_input, agent, model) do
     run_id = Ecto.UUID.generate()
     now = now_iso()
     prompt = agent_prompt(repo, opportunity, run_id, raw_input)
+    payload_json = Jason.encode!(%{"model" => model})
 
     with :ok <-
            sqlite_exec(
              repo,
              """
              INSERT INTO opportunity_runs
-               (id, opportunity_id, run_type, agent, status, stage, prompt, created_at, updated_at)
+               (id, opportunity_id, run_type, agent, status, stage, prompt, payload_json, created_at, updated_at)
              VALUES
                (#{sql_value(run_id)}, #{sql_value(opportunity["id"])}, 'initial_research',
                 #{sql_value(agent)}, 'queued', 'queued', #{sql_value(prompt)},
-                #{sql_value(now)}, #{sql_value(now)});
+                #{sql_value(payload_json)}, #{sql_value(now)}, #{sql_value(now)});
 
              UPDATE opportunities
              SET current_run_id = #{sql_value(run_id)},
@@ -804,6 +806,7 @@ defmodule Afp.Factory.Opportunities do
         "opportunity_id" => opportunity["id"],
         "run_type" => "initial_research",
         "agent" => agent,
+        "model" => model,
         "status" => "queued",
         "stage" => "queued",
         "prompt" => prompt,
@@ -813,7 +816,8 @@ defmodule Afp.Factory.Opportunities do
 
       Events.record_event("opportunity_run", run_id, "opportunity_run_queued", %{
         opportunity_id: opportunity["id"],
-        agent: agent
+        agent: agent,
+        model: model
       })
 
       {:ok, run}
@@ -883,7 +887,7 @@ defmodule Afp.Factory.Opportunities do
 
     case launch_client(agent).launch_new_turn(attrs, opts) do
       {:ok, launch_result} ->
-        persist_agent_success(repo, opportunity["id"], run["id"], agent, launch_result)
+        persist_agent_success(repo, opportunity["id"], run, agent, launch_result)
 
       {:error, reason} ->
         mark_agent_run_failed(repo, opportunity["id"], run["id"], agent, reason)
@@ -1049,14 +1053,15 @@ defmodule Afp.Factory.Opportunities do
 
   defp persist_agent_progress(_repo, _opportunity_id, _run_id, _agent, _event, _payload), do: :ok
 
-  defp persist_agent_success(repo, opportunity_id, run_id, agent, launch_result) do
+  defp persist_agent_success(repo, opportunity_id, run, agent, launch_result) do
+    run_id = run["id"]
     now = now_iso()
     thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
     completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
     session_id = thread["sessionId"] || thread["id"]
     final_answer = Map.get(launch_result, :final_answer)
-    payload_json = Jason.encode!(agent_payload(agent, launch_result, now))
+    payload_json = Jason.encode!(agent_payload(agent, run["model"], launch_result, now))
 
     with :ok <- refresh_file_index(repo, opportunity_id),
          :ok <-
@@ -1143,6 +1148,7 @@ defmodule Afp.Factory.Opportunities do
     %{
       cwd: repo_path,
       input_text: run["prompt"],
+      model: run["model"],
       opportunity_id: opportunity["id"],
       opportunity_run_id: run["id"],
       client_user_message_id: run["id"],
@@ -1178,13 +1184,14 @@ defmodule Afp.Factory.Opportunities do
     }
   end
 
-  defp agent_payload(agent, launch_result, now) do
+  defp agent_payload(agent, model, launch_result, now) do
     thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
     completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
 
     %{
       "agent" => agent,
+      "model" => model,
       "launch_status" => "completed",
       "session_id" => thread["sessionId"] || thread["id"],
       "thread_id" => thread["id"],
@@ -1419,6 +1426,11 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
+  # Optional model override; nil means the agent CLI's configured default.
+  defp launch_model(attrs) do
+    attrs |> attr_value("model") |> Factory.trim_nil()
+  end
+
   defp title_from_input(raw_input) do
     raw_input
     |> String.split("\n", trim: true)
@@ -1459,6 +1471,7 @@ defmodule Afp.Factory.Opportunities do
   defp attr_atom("display_name"), do: :display_name
   defp attr_atom("raw_input"), do: :raw_input
   defp attr_atom("agent"), do: :agent
+  defp attr_atom("model"), do: :model
   defp attr_atom(_key), do: nil
 
   defp sql_value(nil), do: "NULL"

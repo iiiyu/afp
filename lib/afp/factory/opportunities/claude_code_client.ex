@@ -294,7 +294,14 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
       "--verbose",
       "--settings",
       Jason.encode!(launch_settings(attrs))
-    ]
+    ] ++ model_args(attrs)
+  end
+
+  defp model_args(attrs) do
+    case Map.get(attrs, :model) do
+      model when is_binary(model) and model != "" -> ["--model", model]
+      _model -> []
+    end
   end
 
   defp launch_settings(attrs) do

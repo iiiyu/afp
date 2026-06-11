@@ -240,7 +240,8 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
   demand, release, business, repository, and session queues grouped below it.
 - **Opportunities**: primary discovery console with first-run repo setup,
   existing repo health checks, simple input or URL launch with a per-launch
-  agent choice (Codex or Claude Code), opportunity table, and a detail view
+  agent choice (Codex or Claude Code) and optional model override, opportunity
+  table, and a detail view
   backed by repo-local `base.sqlite`: a seven-step research pipeline checklist
   (one skill, one artifact, and one step record per step, plus up to three
   registered evidence files per step selected by the 20-80 rule), file

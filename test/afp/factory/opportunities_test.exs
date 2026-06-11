@@ -137,6 +137,31 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert run["codex_session_id"] == opportunity["codex_session_id"]
   end
 
+  test "create_opportunity records the requested model override in the run payload" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    assert {:ok, result} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Local-first habit tracker for shift workers",
+               "agent" => "claude_code",
+               "model" => "claude-opus-4-8"
+             })
+
+    assert [run] = Opportunities.list_runs(result.opportunity["id"])
+    assert run["status"] == "completed"
+    assert Jason.decode!(run["payload_json"])["model"] == "claude-opus-4-8"
+
+    assert {:ok, no_model_result} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Second launch without a model override",
+               "model" => "   "
+             })
+
+    assert [no_model_run] = Opportunities.list_runs(no_model_result.opportunity["id"])
+    assert Jason.decode!(no_model_run["payload_json"])["model"] == nil
+  end
+
   test "create_opportunity rejects unsupported agents" do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})

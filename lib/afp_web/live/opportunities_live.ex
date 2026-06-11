@@ -263,6 +263,15 @@ defmodule AfpWeb.OpportunitiesLive do
   defp evidence_icon("source_excerpt"), do: "hero-chat-bubble-bottom-center-text"
   defp evidence_icon(_kind), do: "hero-document-magnifying-glass"
 
+  defp run_model(%{"payload_json" => json}) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, %{"model" => model}} when is_binary(model) and model != "" -> model
+      _decoded -> nil
+    end
+  end
+
+  defp run_model(_run), do: nil
+
   defp step_artifact_available?(step, files) do
     Enum.any?(files, &(&1.relative_path == step["artifact_path"]))
   end
@@ -486,6 +495,11 @@ defmodule AfpWeb.OpportunitiesLive do
                       type="select"
                       label="Agent"
                       options={agent_options()}
+                    />
+                    <.input
+                      field={@opportunity_form[:model]}
+                      label="Model (optional)"
+                      placeholder="e.g. gpt-5-codex or claude-opus-4-8 — empty = CLI default"
                     />
                     <button class="inline-flex items-center gap-2 rounded bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">
                       <.icon name="hero-play" class="size-4" /> Launch agent
@@ -764,6 +778,10 @@ defmodule AfpWeb.OpportunitiesLive do
                         <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
                         {Opportunities.agent_label(@active_run["agent"])}
                       </div>
+                      <div :if={run_model(@active_run)}>
+                        <span class="font-medium text-slate-950 dark:text-white">Model:</span>
+                        {run_model(@active_run)}
+                      </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
                         {format_value(@active_run["codex_session_id"])}
@@ -835,6 +853,9 @@ defmodule AfpWeb.OpportunitiesLive do
                           </span>
                           <span class="text-xs text-slate-500">
                             {Opportunities.agent_label(run["agent"])}
+                          </span>
+                          <span :if={run_model(run)} class="text-xs text-slate-500">
+                            · {run_model(run)}
                           </span>
                         </div>
                         <div class="mt-1 text-slate-600 dark:text-slate-300">

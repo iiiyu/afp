@@ -79,7 +79,8 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     |> form("#opportunity-prompt-form",
       opportunity: %{
         raw_input: "Local-first habit tracker for shift workers",
-        agent: "claude_code"
+        agent: "claude_code",
+        model: "claude-opus-4-8"
       }
     )
     |> render_submit()
@@ -92,6 +93,7 @@ defmodule AfpWeb.OpportunitiesLiveTest do
 
     assert detail_html =~ "Agent Session"
     assert detail_html =~ "Claude Code"
+    assert detail_html =~ "claude-opus-4-8"
     assert detail_html =~ "Fake Claude Code completed"
 
     assert detail_html =~ "Research Steps"

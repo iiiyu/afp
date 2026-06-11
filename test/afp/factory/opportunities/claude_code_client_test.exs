@@ -25,6 +25,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
                %{
                  cwd: dir,
                  input_text: "do research",
+                 model: "fake-model",
                  write_targets: %{"opportunities" => "opportunities"}
                },
                claude_executable: script,
@@ -34,6 +35,10 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
                  :ok
                end
              )
+
+    cli_args = dir |> Path.join("cli-args.txt") |> File.read!() |> String.split("\n")
+    assert "--model" in cli_args
+    assert "fake-model" in cli_args
 
     assert result.final_answer == "Research complete."
     assert get_in(result.thread_response, ["result", "thread", "sessionId"]) == "sess-1"
@@ -78,6 +83,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
 
     File.write!(script, """
     #!/bin/sh
+    printf '%s\\n' "$@" > cli-args.txt
     cat <<'EOF'
     #{String.trim(stream_output)}
     EOF
