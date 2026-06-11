@@ -334,7 +334,7 @@ defmodule AfpWeb.OpportunitiesLive do
   defp healthy?(_repo), do: false
 
   defp new_opportunity_form do
-    to_form(%{"agent" => "codex", "model" => ""}, as: :opportunity)
+    to_form(%{"agent" => "claude_code", "model" => ""}, as: :opportunity)
   end
 
   defp agent_options do
@@ -353,7 +353,7 @@ defmodule AfpWeb.OpportunitiesLive do
   defp selected_agent(form) do
     case form[:agent].value do
       agent when is_binary(agent) and agent != "" -> agent
-      _value -> "codex"
+      _value -> "claude_code"
     end
   end
 

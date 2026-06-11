@@ -44,7 +44,8 @@ defmodule AfpWeb.OpportunitiesLiveTest do
       view
       |> form("#opportunity-prompt-form",
         opportunity: %{
-          raw_input: "Receipt packet for restaurant shift disputes"
+          raw_input: "Receipt packet for restaurant shift disputes",
+          agent: "codex"
         }
       )
       |> render_submit()
@@ -150,12 +151,20 @@ defmodule AfpWeb.OpportunitiesLiveTest do
 
     {:ok, view, html} = live(conn, ~p"/opportunities")
 
-    assert html =~ "gpt-5.5"
+    # Claude Code is the default agent, so its models render first.
+    assert html =~ "claude-fable-5"
     refute html =~ "Custom model"
+
+    codex_html =
+      view
+      |> form("#opportunity-prompt-form", opportunity: %{agent: "codex"})
+      |> render_change()
+
+    assert codex_html =~ "gpt-5.5"
 
     custom_html =
       view
-      |> form("#opportunity-prompt-form", opportunity: %{model: "__custom__"})
+      |> form("#opportunity-prompt-form", opportunity: %{agent: "codex", model: "__custom__"})
       |> render_change()
 
     assert custom_html =~ "Custom model"

@@ -21,8 +21,8 @@ defmodule Afp.Factory.Opportunities do
   @core_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
   @required_tables @core_tables ++ ["opportunity_step_results", "opportunity_step_evidence"]
   @agent_tables ~w(opportunities opportunity_runs)
-  @agents ~w(codex claude_code)
-  @default_agent "codex"
+  @agents ~w(claude_code codex)
+  @default_agent "claude_code"
 
   # Curated per-agent model pickers for the launch form (verified 2026-06);
   # free-text custom values and the CLI-default empty value stay supported.
