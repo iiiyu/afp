@@ -17,6 +17,20 @@ defmodule Afp.Factory.Opportunities.FakeClaudeCodeClient do
     :ok = notify(opts, :thread_started, thread_response)
     :ok = notify(opts, :turn_started, turn_response)
 
+    :ok =
+      notify(opts, :activity, %{
+        "kind" => "tool",
+        "text" => "WebSearch: fake competitor scan",
+        "at" => "2026-01-01T00:00:00Z"
+      })
+
+    :ok =
+      notify(opts, :activity, %{
+        "kind" => "message",
+        "text" => "Fake Claude Code analyzing demand evidence.",
+        "at" => "2026-01-01T00:00:01Z"
+      })
+
     {:ok,
      %{
        initialize_response: %{"type" => "system", "subtype" => "init"},

@@ -9,7 +9,10 @@ defmodule AfpWeb.OpportunitiesLive do
 
   @impl true
   def mount(params, _session, socket) do
-    if connected?(socket), do: Events.subscribe()
+    if connected?(socket) do
+      Events.subscribe()
+      Events.subscribe_run_activity()
+    end
 
     {:ok,
      socket
@@ -19,6 +22,7 @@ defmodule AfpWeb.OpportunitiesLive do
      |> assign(:opportunity_form, new_opportunity_form())
      |> assign(:selected_file_path, nil)
      |> assign(:selected_file, nil)
+     |> assign(:run_activity, [])
      |> load_opportunities(params)}
   end
 
@@ -33,6 +37,19 @@ defmodule AfpWeb.OpportunitiesLive do
       {:noreply, load_opportunities(socket, current_params(socket))}
     else
       {:noreply, socket}
+    end
+  end
+
+  def handle_info(
+        {:opportunity_run_activity, %{opportunity_id: opportunity_id} = message},
+        socket
+      ) do
+    case socket.assigns.selected_opportunity do
+      %{"id" => ^opportunity_id} ->
+        {:noreply, append_run_activity(socket, message.activity)}
+
+      _selected ->
+        {:noreply, socket}
     end
   end
 
@@ -153,6 +170,7 @@ defmodule AfpWeb.OpportunitiesLive do
         selected_path = selected_file_path(socket.assigns[:selected_file_path], files)
 
         socket
+        |> clear_run_activity_on_switch(id)
         |> assign(:selected_opportunity, opportunity)
         |> assign(:opportunity_runs, runs)
         |> assign(:opportunity_files, files)
@@ -174,7 +192,31 @@ defmodule AfpWeb.OpportunitiesLive do
     |> assign(:active_run, nil)
     |> assign(:selected_file_path, nil)
     |> assign(:selected_file, nil)
+    |> assign(:run_activity, [])
   end
+
+  defp clear_run_activity_on_switch(socket, id) do
+    case socket.assigns[:selected_opportunity] do
+      %{"id" => ^id} -> socket
+      _selected -> assign(socket, :run_activity, [])
+    end
+  end
+
+  @run_activity_limit 30
+
+  defp append_run_activity(socket, activity) do
+    entry = Map.put(activity, "id", System.unique_integer([:positive, :monotonic]))
+
+    activities =
+      [entry | socket.assigns[:run_activity] || []]
+      |> Enum.take(@run_activity_limit)
+
+    assign(socket, :run_activity, activities)
+  end
+
+  defp activity_icon("tool"), do: "hero-wrench-screwdriver"
+  defp activity_icon("tool_error"), do: "hero-exclamation-triangle"
+  defp activity_icon(_kind), do: "hero-chat-bubble-left-ellipsis"
 
   defp files_for(opportunity_id) do
     case Opportunities.list_opportunity_files(opportunity_id) do
@@ -629,6 +671,36 @@ defmodule AfpWeb.OpportunitiesLive do
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
                         {format_value(@selected_opportunity["codex_session_id"])}
+                      </div>
+                    </div>
+
+                    <div :if={@run_activity != []} class="mt-3">
+                      <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Live activity
+                      </div>
+                      <div
+                        id="agent-activity-feed"
+                        class="max-h-72 space-y-1.5 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950"
+                      >
+                        <div
+                          :for={entry <- @run_activity}
+                          id={"agent-activity-#{entry["id"]}"}
+                          class="flex items-start gap-1.5 text-xs"
+                        >
+                          <.icon
+                            name={activity_icon(entry["kind"])}
+                            class={[
+                              "mt-0.5 size-3.5 shrink-0",
+                              if(entry["kind"] == "tool_error",
+                                do: "text-red-500",
+                                else: "text-slate-400"
+                              )
+                            ]}
+                          />
+                          <span class="min-w-0 break-words text-slate-600 dark:text-slate-300">
+                            {entry["text"]}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </.panel>

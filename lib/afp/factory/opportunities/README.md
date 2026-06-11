@@ -19,4 +19,6 @@ client in this folder.
 - `claude_code_client.ex` - Port-based adapter that runs
   `claude -p <prompt> --output-format stream-json` headlessly inside the
   opportunity repo, maps the init/result stream events onto the shared launch
-  envelope, and bounds writes with Claude Code permission allow/deny rules.
+  envelope, emits live `:activity` launch events (assistant text, tool calls,
+  tool errors) for the detail-page feed, and bounds writes with Claude Code
+  permission allow/deny rules.

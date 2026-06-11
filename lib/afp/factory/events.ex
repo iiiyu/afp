@@ -8,6 +8,7 @@ defmodule Afp.Factory.Events do
   alias Afp.Repo
 
   @topic "factory:events"
+  @run_activity_topic "factory:opportunity_run_activity"
 
   def topic, do: @topic
 
@@ -19,6 +20,20 @@ defmodule Afp.Factory.Events do
 
   def subscribe(subject_type, subject_id) do
     Phoenix.PubSub.subscribe(Afp.PubSub, subject_topic(subject_type, subject_id))
+  end
+
+  def subscribe_run_activity do
+    Phoenix.PubSub.subscribe(Afp.PubSub, @run_activity_topic)
+  end
+
+  # Ephemeral live-progress feed for agent runs; broadcast only, never persisted.
+  def broadcast_run_activity(opportunity_id, run_id, activity) do
+    Phoenix.PubSub.broadcast(
+      Afp.PubSub,
+      @run_activity_topic,
+      {:opportunity_run_activity,
+       %{opportunity_id: opportunity_id, run_id: run_id, activity: activity}}
+    )
   end
 
   def list_events(limit \\ 100) do

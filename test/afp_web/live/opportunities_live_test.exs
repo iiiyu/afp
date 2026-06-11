@@ -94,4 +94,50 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert detail_html =~ "Claude Code"
     assert detail_html =~ "Fake Claude Code completed"
   end
+
+  test "renders live run activity on the detail page", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, %{opportunity: opportunity}} =
+      Opportunities.create_opportunity(%{
+        "raw_input" => "Local-first habit tracker for shift workers",
+        "agent" => "claude_code"
+      })
+
+    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    refute html =~ "Live activity"
+
+    send(
+      view.pid,
+      {:opportunity_run_activity,
+       %{
+         opportunity_id: opportunity["id"],
+         run_id: "run-1",
+         activity: %{
+           "kind" => "tool",
+           "text" => "Bash: sqlite3 base.sqlite",
+           "agent" => "claude_code",
+           "at" => "2026-01-01T00:00:00Z"
+         }
+       }}
+    )
+
+    html = render(view)
+    assert html =~ "Live activity"
+    assert html =~ "Bash: sqlite3 base.sqlite"
+
+    send(
+      view.pid,
+      {:opportunity_run_activity,
+       %{
+         opportunity_id: "another-opportunity",
+         run_id: "run-2",
+         activity: %{"kind" => "message", "text" => "Unrelated activity"}
+       }}
+    )
+
+    html = render(view)
+    refute html =~ "Unrelated activity"
+  end
 end

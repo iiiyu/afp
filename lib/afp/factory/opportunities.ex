@@ -824,6 +824,12 @@ defmodule Afp.Factory.Opportunities do
     :ok
   end
 
+  defp persist_agent_progress(_repo, opportunity_id, run_id, agent, :activity, payload)
+       when is_map(payload) do
+    Events.broadcast_run_activity(opportunity_id, run_id, Map.put(payload, "agent", agent))
+    :ok
+  end
+
   defp persist_agent_progress(_repo, _opportunity_id, _run_id, _agent, _event, _payload), do: :ok
 
   defp persist_agent_success(repo, opportunity_id, run_id, agent, launch_result) do

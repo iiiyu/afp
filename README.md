@@ -240,7 +240,8 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
 - **Opportunities**: primary discovery console with first-run repo setup,
   existing repo health checks, simple input or URL launch with a per-launch
   agent choice (Codex or Claude Code), opportunity table, detail file browser,
-  and live agent run state backed by repo-local `base.sqlite`.
+  and live agent run state backed by repo-local `base.sqlite`, including an
+  ephemeral live-activity feed for Claude Code runs on the detail page.
 - **Demand**: legacy upstream demand-source console, with standard source repo
   scaffolding, configured research repos, editable source schedules, scheduled
   due-scan drafts, manual idea/URL research handoffs, candidate pickup, product

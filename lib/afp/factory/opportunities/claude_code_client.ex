@@ -84,8 +84,97 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
     events = Enum.flat_map(lines, &decode_line/1)
     conn = %{conn | buffer: buffer, events: conn.events ++ events}
 
-    with {:ok, conn} <- maybe_notify_started(conn, events, cwd) do
+    with {:ok, conn} <- maybe_notify_started(conn, events, cwd),
+         {:ok, conn} <- notify_activities(conn, events) do
       {:ok, conn, Enum.find(events, &result_event?/1)}
+    end
+  end
+
+  defp notify_activities(conn, events) do
+    events
+    |> Enum.flat_map(&activities/1)
+    |> Enum.reduce_while({:ok, conn}, fn activity, {:ok, conn} ->
+      case notify_launch_event(conn, :activity, activity) do
+        {:ok, conn} -> {:cont, {:ok, conn}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp activities(%{"type" => "assistant", "message" => %{"content" => content}})
+       when is_list(content) do
+    Enum.flat_map(content, &content_block_activity/1)
+  end
+
+  defp activities(%{"type" => "user", "message" => %{"content" => content}})
+       when is_list(content) do
+    Enum.flat_map(content, &tool_result_activity/1)
+  end
+
+  defp activities(_event), do: []
+
+  defp content_block_activity(%{"type" => "text", "text" => text}) when is_binary(text) do
+    [activity("message", text)]
+  end
+
+  defp content_block_activity(%{"type" => "tool_use", "name" => name} = block) do
+    [activity("tool", tool_summary(name, Map.get(block, "input")))]
+  end
+
+  defp content_block_activity(_block), do: []
+
+  defp tool_result_activity(%{"type" => "tool_result", "is_error" => true} = block) do
+    [activity("tool_error", result_text(block["content"]))]
+  end
+
+  defp tool_result_activity(_block), do: []
+
+  defp tool_summary(name, input) when is_map(input) do
+    detail =
+      Enum.find_value(
+        ["command", "file_path", "path", "pattern", "query", "url", "description"],
+        fn key ->
+          case Map.get(input, key) do
+            value when is_binary(value) and value != "" -> value
+            _value -> nil
+          end
+        end
+      )
+
+    case detail do
+      nil -> name
+      detail -> "#{name}: #{detail}"
+    end
+  end
+
+  defp tool_summary(name, _input), do: name
+
+  defp result_text(content) when is_binary(content), do: content
+
+  defp result_text(content) when is_list(content) do
+    content
+    |> Enum.map_join(" ", fn
+      %{"type" => "text", "text" => text} -> text
+      _block -> ""
+    end)
+    |> String.trim()
+  end
+
+  defp result_text(_content), do: "Tool call failed"
+
+  defp activity(kind, text) do
+    %{
+      "kind" => kind,
+      "text" => trim_activity_text(text),
+      "at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+  end
+
+  defp trim_activity_text(text) do
+    if String.length(text) > 240 do
+      String.slice(text, 0, 240) <> "..."
+    else
+      text
     end
   end
 

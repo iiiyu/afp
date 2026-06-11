@@ -85,6 +85,8 @@ defmodule Afp.Factory.OpportunitiesTest do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
 
+    :ok = Afp.Factory.Events.subscribe_run_activity()
+
     assert {:ok, result} =
              Opportunities.create_opportunity(%{
                "raw_input" => "Local-first habit tracker for shift workers",
@@ -92,6 +94,19 @@ defmodule Afp.Factory.OpportunitiesTest do
              })
 
     opportunity = result.opportunity
+
+    assert_received {:opportunity_run_activity,
+                     %{
+                       opportunity_id: activity_opportunity_id,
+                       activity: %{"kind" => "tool", "agent" => "claude_code"}
+                     }}
+
+    assert activity_opportunity_id == opportunity["id"]
+
+    assert_received {:opportunity_run_activity,
+                     %{activity: %{"kind" => "message", "text" => text}}}
+
+    assert text =~ "Fake Claude Code analyzing"
 
     assert opportunity["agent"] == "claude_code"
     assert opportunity["status"] == "researched"
