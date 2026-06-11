@@ -24,6 +24,11 @@ defmodule Afp.Factory.Opportunities do
   @agents ~w(codex claude_code)
   @default_agent "codex"
 
+  # Curated per-agent model pickers for the launch form (verified 2026-06);
+  # free-text custom values and the CLI-default empty value stay supported.
+  @codex_models ~w(gpt-5.5 gpt-5.4 gpt-5.4-mini gpt-5.3-codex gpt-5.2-codex)
+  @claude_code_models ~w(claude-fable-5 claude-opus-4-8 claude-sonnet-4-6 claude-haiku-4-5)
+
   @research_steps [
     %{
       key: "competitor_discovery",
@@ -221,6 +226,9 @@ defmodule Afp.Factory.Opportunities do
 
   def agent_label("claude_code"), do: "Claude Code"
   def agent_label(_agent), do: "Codex"
+
+  def known_models("claude_code"), do: @claude_code_models
+  def known_models(_agent), do: @codex_models
 
   def research_steps, do: @research_steps
 

@@ -75,6 +75,15 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     {:ok, view, html} = live(conn, ~p"/opportunities")
     assert html =~ "New Opportunity"
 
+    # Switching the agent re-renders the model dropdown with Claude models.
+    changed_html =
+      view
+      |> form("#opportunity-prompt-form", opportunity: %{agent: "claude_code"})
+      |> render_change()
+
+    assert changed_html =~ "claude-opus-4-8"
+    assert changed_html =~ "claude-fable-5"
+
     view
     |> form("#opportunity-prompt-form",
       opportunity: %{
@@ -133,6 +142,38 @@ defmodule AfpWeb.OpportunitiesLiveTest do
 
     assert html =~ "Top complaint themes"
     assert has_element?(view, "#research-step-pain_strength #step-evidence-ev-live-1")
+  end
+
+  test "launches with a custom model typed into the free-text field", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, view, html} = live(conn, ~p"/opportunities")
+
+    assert html =~ "gpt-5.5"
+    refute html =~ "Custom model"
+
+    custom_html =
+      view
+      |> form("#opportunity-prompt-form", opportunity: %{model: "__custom__"})
+      |> render_change()
+
+    assert custom_html =~ "Custom model"
+
+    view
+    |> form("#opportunity-prompt-form",
+      opportunity: %{
+        raw_input: "Niche invoice tracker",
+        agent: "codex",
+        model: "__custom__",
+        model_custom: "gpt-6-experimental"
+      }
+    )
+    |> render_submit()
+
+    [opportunity] = Opportunities.list_opportunities()
+    [run] = Opportunities.list_runs(opportunity["id"])
+    assert Jason.decode!(run["payload_json"])["model"] == "gpt-6-experimental"
   end
 
   test "renders live run activity on the detail page", %{conn: conn} do

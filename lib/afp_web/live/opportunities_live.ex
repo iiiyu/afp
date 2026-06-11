@@ -113,8 +113,21 @@ defmodule AfpWeb.OpportunitiesLive do
     end
   end
 
+  def handle_event("opportunity_form_changed", %{"opportunity" => params}, socket) do
+    previous_agent = socket.assigns.opportunity_form.params["agent"]
+
+    params =
+      if params["agent"] == previous_agent do
+        params
+      else
+        Map.merge(params, %{"model" => "", "model_custom" => ""})
+      end
+
+    {:noreply, assign(socket, :opportunity_form, to_form(params, as: :opportunity))}
+  end
+
   def handle_event("create_opportunity", %{"opportunity" => params}, socket) do
-    case Opportunities.create_opportunity(params) do
+    case params |> resolve_model_param() |> Opportunities.create_opportunity() do
       {:ok, %{opportunity: opportunity}} ->
         agent_label = Opportunities.agent_label(opportunity["agent"])
 
@@ -321,11 +334,36 @@ defmodule AfpWeb.OpportunitiesLive do
   defp healthy?(_repo), do: false
 
   defp new_opportunity_form do
-    to_form(%{"agent" => "codex"}, as: :opportunity)
+    to_form(%{"agent" => "codex", "model" => ""}, as: :opportunity)
   end
 
   defp agent_options do
     Enum.map(Opportunities.supported_agents(), &{Opportunities.agent_label(&1), &1})
+  end
+
+  @custom_model_value "__custom__"
+
+  defp model_options(form) do
+    known = Opportunities.known_models(selected_agent(form))
+
+    [{"CLI default", ""}] ++
+      Enum.map(known, &{&1, &1}) ++ [{"Custom…", @custom_model_value}]
+  end
+
+  defp selected_agent(form) do
+    case form[:agent].value do
+      agent when is_binary(agent) and agent != "" -> agent
+      _value -> "codex"
+    end
+  end
+
+  defp custom_model_selected?(form), do: form[:model].value == @custom_model_value
+
+  defp resolve_model_param(params) do
+    case Map.get(params, "model") do
+      @custom_model_value -> Map.put(params, "model", Map.get(params, "model_custom"))
+      _model -> params
+    end
   end
 
   defp configured_state(nil), do: "Not configured"
@@ -481,6 +519,7 @@ defmodule AfpWeb.OpportunitiesLive do
                   <.form
                     for={@opportunity_form}
                     id="opportunity-prompt-form"
+                    phx-change="opportunity_form_changed"
                     phx-submit="create_opportunity"
                     class="space-y-3"
                   >
@@ -498,8 +537,15 @@ defmodule AfpWeb.OpportunitiesLive do
                     />
                     <.input
                       field={@opportunity_form[:model]}
-                      label="Model (optional)"
-                      placeholder="e.g. gpt-5-codex or claude-opus-4-8 — empty = CLI default"
+                      type="select"
+                      label="Model"
+                      options={model_options(@opportunity_form)}
+                    />
+                    <.input
+                      :if={custom_model_selected?(@opportunity_form)}
+                      field={@opportunity_form[:model_custom]}
+                      label="Custom model"
+                      placeholder="exact model id passed to the CLI"
                     />
                     <button class="inline-flex items-center gap-2 rounded bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">
                       <.icon name="hero-play" class="size-4" /> Launch agent
