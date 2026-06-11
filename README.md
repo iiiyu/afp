@@ -311,3 +311,15 @@ uses stored byte offsets to avoid duplicate imports.
   reflect current UI.
 - Keep root docs and [`docs/database_schema.md`](docs/database_schema.md) aligned
   with data model or architecture changes.
+
+## License
+
+Copyright (c) 2026 [Neural Craft Limited](https://neuralcraft.art/).
+
+This project is source-available under a BSD 3-Clause license with a
+commercial use restriction (see [`LICENSE`](LICENSE)):
+
+- **Non-commercial use** (personal study, research, evaluation, education) is
+  free under BSD-style terms.
+- **Commercial use** requires a separate paid commercial license from
+  Neural Craft Limited — contact via [neuralcraft.art](https://neuralcraft.art/).
