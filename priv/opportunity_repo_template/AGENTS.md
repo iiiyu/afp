@@ -8,9 +8,11 @@ opportunity evidence, fixed-name step artifacts, and the repo-local
 ## Required Structure
 
 - `base.sqlite` - repo-local SQLite index for opportunities, runs, step
-  results, and files
+  results, evidence, and files
 - `opportunities/[uuid]/README.md` - final opportunity summary
 - `opportunities/[uuid]/steps/` - one fixed-name artifact per pipeline step
+- `opportunities/[uuid]/steps/NN-<step>/` - optional evidence materials kept
+  by that step (see Evidence Materials)
 - `.skills/` - the research pipeline skills listed below
 
 ## Read Order
@@ -71,6 +73,51 @@ ON CONFLICT(opportunity_id, step_key) DO UPDATE SET
 
 If a step cannot be completed, record it with `status = 'failed'` and explain
 why in `summary`, then stop the pipeline.
+
+## Evidence Materials
+
+Beyond its main artifact, a step MAY keep supporting evidence materials:
+competitor profile analyses, pros/cons notes, review excerpt compilations, and
+real product screenshots.
+
+Selection follows the 20-80 rule:
+
+- Keep only the most decision-relevant ~20% of what you encounter — the
+  materials that directly support a score, a weakness claim, or the wedge.
+  Never archive everything.
+- Hard cap: at most 3 evidence files per step. Zero is fine.
+- Allowed formats: Markdown (`.md`) for analyses/excerpts and images
+  (`.png` / `.jpg` / `.webp`) for screenshots — the only formats AFP previews.
+- Screenshots must be real, obtained from the live web (product pages, app
+  store listings, review pages). If you cannot obtain one, link the source URL
+  in a Markdown note instead. Never fabricate or mock screenshots.
+
+Every evidence file MUST:
+
+1. Live under that step's directory `steps/NN-<step>/` (create the directory
+   when first needed) with a short kebab-case descriptive name, e.g.
+   `steps/00-competitor-discovery/competitor-a-app-store.png`.
+2. Be linked from the step's main artifact with one line on what it shows.
+3. Be registered in `opportunity_step_evidence`:
+
+```bash
+sqlite3 base.sqlite "INSERT INTO opportunity_step_evidence
+  (id, opportunity_id, run_id, step_key, title, kind, file_path,
+   why_it_matters, source_url, created_at, updated_at)
+VALUES
+  (lower(hex(randomblob(16))), '<OPPORTUNITY_ID>', '<RUN_ID>', '<step_key>',
+   '<short title>', '<analysis|screenshot|source_excerpt>',
+   'steps/NN-<step>/<file-name>', '<what this proves and why it was kept>',
+   '<source url or empty>',
+   strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+ON CONFLICT(opportunity_id, file_path) DO UPDATE SET
+  run_id = excluded.run_id,
+  title = excluded.title,
+  kind = excluded.kind,
+  why_it_matters = excluded.why_it_matters,
+  source_url = excluded.source_url,
+  updated_at = excluded.updated_at;"
+```
 
 ## Core Rules
 

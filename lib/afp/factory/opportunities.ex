@@ -16,10 +16,10 @@ defmodule Afp.Factory.Opportunities do
   @skills_path ".skills"
   @opportunities_path "opportunities"
   @steps_path "steps"
-  @schema_version 3
-  @template_version 3
+  @schema_version 4
+  @template_version 4
   @core_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
-  @required_tables @core_tables ++ ["opportunity_step_results"]
+  @required_tables @core_tables ++ ["opportunity_step_results", "opportunity_step_evidence"]
   @agent_tables ~w(opportunities opportunity_runs)
   @agents ~w(codex claude_code)
   @default_agent "codex"
@@ -241,6 +241,23 @@ defmodule Afp.Factory.Opportunities do
              FROM opportunity_step_results
              WHERE opportunity_id = #{sql_value(opportunity_id)}
              ORDER BY step_index ASC
+             """
+           ) do
+      rows
+    end
+  end
+
+  def list_step_evidence(opportunity_id) do
+    with {:ok, repo} <- healthy_repo(),
+         {:ok, rows} <-
+           sqlite_json(
+             repo,
+             """
+             SELECT id, opportunity_id, run_id, step_key, title, kind, file_path,
+                    why_it_matters, source_url, created_at, updated_at
+             FROM opportunity_step_evidence
+             WHERE opportunity_id = #{sql_value(opportunity_id)}
+             ORDER BY datetime(created_at) ASC, file_path ASC
              """
            ) do
       rows
@@ -512,6 +529,7 @@ defmodule Afp.Factory.Opportunities do
   defp upgrade_repo(repo_path, db_path) do
     with :ok <- ensure_agent_columns(db_path),
          :ok <- sqlite_exec_path(db_path, step_results_table_sql()),
+         :ok <- sqlite_exec_path(db_path, step_evidence_table_sql()),
          :ok <- ensure_template_files(repo_path, db_path) do
       :ok
     else
@@ -1141,6 +1159,7 @@ defmodule Afp.Factory.Opportunities do
         "upsert_opportunity",
         "upsert_run",
         "upsert_step_result",
+        "upsert_evidence",
         "link_file",
         "upsert_candidate"
       ],
@@ -1541,6 +1560,8 @@ defmodule Afp.Factory.Opportunities do
 
     #{step_results_table_sql()}
 
+    #{step_evidence_table_sql()}
+
     CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities(status);
     CREATE INDEX IF NOT EXISTS idx_opportunities_updated_at ON opportunities(updated_at);
     CREATE INDEX IF NOT EXISTS idx_opportunity_runs_opportunity ON opportunity_runs(opportunity_id);
@@ -1571,6 +1592,29 @@ defmodule Afp.Factory.Opportunities do
 
     CREATE INDEX IF NOT EXISTS idx_opportunity_step_results_opportunity
       ON opportunity_step_results(opportunity_id);
+    """
+  end
+
+  defp step_evidence_table_sql do
+    """
+    CREATE TABLE IF NOT EXISTS opportunity_step_evidence (
+      id TEXT PRIMARY KEY,
+      opportunity_id TEXT NOT NULL,
+      run_id TEXT,
+      step_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'analysis',
+      file_path TEXT NOT NULL,
+      why_it_matters TEXT,
+      source_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(opportunity_id, file_path),
+      FOREIGN KEY(opportunity_id) REFERENCES opportunities(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_opportunity_step_evidence_opportunity
+      ON opportunity_step_evidence(opportunity_id);
     """
   end
 
@@ -1618,9 +1662,10 @@ defmodule Afp.Factory.Opportunities do
     1. Execute all seven pipeline steps in order. Never skip, merge, or reorder steps.
     2. Write each step's artifact to its fixed path under `#{relative_root}/#{@steps_path}/`.
     3. After each step, upsert its row in `opportunity_step_results` (see AGENTS.md -> Step Recording) using OPPORTUNITY_ID and OPPORTUNITY_RUN_ID. The rows are pre-seeded as 'pending'.
-    4. Finish with the score aggregator: rewrite `#{relative_root}/README.md` as the final summary and update the opportunities row with total_score, route, and latest_summary.
-    5. Keep all files for this opportunity under `#{relative_root}/`.
-    6. Do not invent evidence. Follow the evidence caps from the skills.
+    4. Keep only the most decision-relevant supporting materials (the 20-80 rule: max 3 files per step) under each step's own directory and register every kept file in `opportunity_step_evidence` (see AGENTS.md -> Evidence Materials).
+    5. Finish with the score aggregator: rewrite `#{relative_root}/README.md` as the final summary and update the opportunities row with total_score, route, and latest_summary.
+    6. Keep all files for this opportunity under `#{relative_root}/`.
+    7. Do not invent evidence. Follow the evidence caps from the skills.
 
     Repo root: #{repo["repo_path"]}
     """

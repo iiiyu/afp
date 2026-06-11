@@ -10,6 +10,9 @@ Portable opportunity research repo for AFP.
   opportunity.
 - `opportunities/[uuid]/steps/` stores one fixed-name artifact per research
   pipeline step (`00-competitor-discovery.md` ... `06-score-aggregator.md`).
+- `opportunities/[uuid]/steps/NN-<step>/` stores that step's optional evidence
+  materials (analyses, review excerpts, real product screenshots), selected by
+  the 20-80 rule with at most 3 files per step.
 - `.skills/` stores the seven-step research pipeline skills the agent executes
   in order, plus the pipeline overview.
 
@@ -23,4 +26,6 @@ Portable opportunity research repo for AFP.
 - `opportunity_step_results` stores one row per pipeline step per opportunity:
   status, score, evidence strength, summary, artifact path, and structured
   payload.
+- `opportunity_step_evidence` stores one row per kept evidence file: step key,
+  title, kind, file path, why it matters, and source URL.
 - `opportunity_files` stores Markdown/image files displayed by AFP.

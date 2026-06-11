@@ -307,7 +307,9 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
   end
 
   defp allow_rules(attrs) do
-    bash_rules = Enum.map(["sqlite3" | @safe_read_commands], &"Bash(#{&1} *)")
+    # curl/mkdir support downloading real evidence screenshots into step
+    # directories; destructive commands stay on the deny list.
+    bash_rules = Enum.map(["sqlite3", "curl", "mkdir" | @safe_read_commands], &"Bash(#{&1} *)")
 
     ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"] ++
       write_rules(attrs) ++ bash_rules

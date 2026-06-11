@@ -100,6 +100,39 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert has_element?(detail_view, "#research-step-demand_proof")
   end
 
+  test "renders registered step evidence under its step", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, %{opportunity: opportunity}} =
+      Opportunities.create_opportunity(%{"raw_input" => "Receipt packet for shift disputes"})
+
+    {_output, 0} =
+      System.cmd(
+        "sqlite3",
+        [
+          Path.join(path, "base.sqlite"),
+          """
+          INSERT INTO opportunity_step_evidence
+            (id, opportunity_id, step_key, title, kind, file_path, why_it_matters,
+             source_url, created_at, updated_at)
+          VALUES
+            ('ev-live-1', '#{opportunity["id"]}', 'pain_strength',
+             'Top complaint themes', 'source_excerpt',
+             'steps/02-pain-strength/top-complaint-themes.md',
+             'Backs the repeated-complaint pattern', '',
+             '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+
+    assert html =~ "Top complaint themes"
+    assert has_element?(view, "#research-step-pain_strength #step-evidence-ev-live-1")
+  end
+
   test "renders live run activity on the detail page", %{conn: conn} do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})

@@ -54,3 +54,14 @@ Verification:
   - `payload_json` = compact JSON with `score`, `evidence_strength`,
     `build_feasibility`, `distribution_feasibility`, `hard_blockers`,
     `first_version_boundary`, `reasoning`, `uncertainty`, `next_route`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/05-build-distribution-feasibility/` (see
+`AGENTS.md` -> Evidence Materials):
+
+- a screenshot or note of app store / search results for the entry keywords
+  (who currently ranks, how crowded)
+- a note on the riskiest platform/API/regulatory dependency with its source
+
+Keep only what changes the feasibility score or flags a hard blocker.

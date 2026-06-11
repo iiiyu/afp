@@ -40,6 +40,14 @@ Simple Input
 
 If evidence is missing, do not guess. Mark unknown.
 
+## Evidence Materials
+
+Steps may keep a few supporting evidence files (analyses, review excerpts,
+real product screenshots) under their own `steps/NN-<step>/` directory,
+following the 20-80 rule from `AGENTS.md` -> Evidence Materials: only the most
+decision-relevant ~20%, at most 3 files per step, every file registered in
+`opportunity_step_evidence`.
+
 ## Hard Rules
 
 - Never skip, merge, or reorder steps.

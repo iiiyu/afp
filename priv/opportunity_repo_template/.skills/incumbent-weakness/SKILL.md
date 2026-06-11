@@ -54,3 +54,14 @@ Verification:
   - `payload_json` = compact JSON with `score`, `evidence_strength`,
     `weaknesses_by_competitor`, `cross_competitor_pattern`, `reasoning`,
     `uncertainty`, `next_route`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/03-incumbent-weakness/` (see `AGENTS.md` ->
+Evidence Materials):
+
+- a per-competitor weakness note with quoted negative review excerpts
+- a real screenshot showing the weakness in the product (bloated UX, missing
+  export, paywall complaints on the listing)
+
+Keep the evidence that ties one weakness to multiple users or competitors.

@@ -54,6 +54,10 @@ writes the repo-local `base.sqlite` database described in
   opportunity (`pending`/`completed`/`failed`), with step key/index, score,
   evidence strength, summary, artifact path, and structured payload. Seven
   rows are pre-seeded as `pending` per launch.
+- `opportunity_step_evidence` - one row per kept per-step evidence file
+  (20-80 rule, max 3 per step), with step key, title, kind
+  (`analysis`/`screenshot`/`source_excerpt`), file path, why it matters, and
+  source URL.
 - `opportunity_files` - Markdown/image files under `opportunities/[uuid]/`,
   with relative path, file type, size, mtime, and timestamps.
 

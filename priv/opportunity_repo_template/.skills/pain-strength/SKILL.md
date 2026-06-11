@@ -50,3 +50,14 @@ Verification:
   - `payload_json` = compact JSON with `score`, `evidence_strength`,
     `pain_types`, `frequency_hypothesis`, `intensity_hypothesis`,
     `evidence_items`, `reasoning`, `uncertainty`, `next_route`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/02-pain-strength/` (see `AGENTS.md` -> Evidence
+Materials):
+
+- a compilation of the most repeated, most intense user complaints (quoted
+  excerpts with sources)
+- a screenshot of a representative complaint thread or low-rating review page
+
+Repeated complaints beat isolated ones; keep the pattern, not every instance.

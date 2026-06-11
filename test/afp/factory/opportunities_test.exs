@@ -165,6 +165,7 @@ defmodule Afp.Factory.OpportunitiesTest do
           ALTER TABLE opportunities DROP COLUMN agent;
           ALTER TABLE opportunity_runs DROP COLUMN agent;
           DROP TABLE opportunity_step_results;
+          DROP TABLE opportunity_step_evidence;
           UPDATE repo_metadata SET value = '1' WHERE key = 'schema_version';
           DELETE FROM repo_metadata WHERE key = 'template_version';
           """
@@ -178,7 +179,7 @@ defmodule Afp.Factory.OpportunitiesTest do
 
     assert {:ok, repo} = Opportunities.refresh_configured_repo()
     assert repo["health_state"] == "healthy"
-    assert repo["schema_version"] == "3"
+    assert repo["schema_version"] == "4"
 
     agents_md = File.read!(Path.join(path, "AGENTS.md"))
     refute agents_md =~ "OLD TEMPLATE"
@@ -201,7 +202,7 @@ defmodule Afp.Factory.OpportunitiesTest do
         stderr_to_stdout: true
       )
 
-    assert String.trim(version_output) == "3"
+    assert String.trim(version_output) == "4"
 
     assert {:ok, result} =
              Opportunities.create_opportunity(%{
@@ -211,5 +212,40 @@ defmodule Afp.Factory.OpportunitiesTest do
 
     assert result.opportunity["agent"] == "claude_code"
     assert length(Opportunities.list_step_results(result.opportunity["id"])) == 7
+  end
+
+  test "list_step_evidence returns registered evidence files" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, %{opportunity: opportunity}} =
+      Opportunities.create_opportunity(%{"raw_input" => "Receipt packet for shift disputes"})
+
+    assert Opportunities.list_step_evidence(opportunity["id"]) == []
+
+    {_output, 0} =
+      System.cmd(
+        "sqlite3",
+        [
+          Path.join(path, "base.sqlite"),
+          """
+          INSERT INTO opportunity_step_evidence
+            (id, opportunity_id, step_key, title, kind, file_path, why_it_matters,
+             source_url, created_at, updated_at)
+          VALUES
+            ('ev-1', '#{opportunity["id"]}', 'competitor_discovery',
+             'Competitor A app store listing', 'screenshot',
+             'steps/00-competitor-discovery/competitor-a-app-store.png',
+             'Anchors competitor A pricing and rating claims',
+             'https://example.com/app', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert [evidence] = Opportunities.list_step_evidence(opportunity["id"])
+    assert evidence["step_key"] == "competitor_discovery"
+    assert evidence["kind"] == "screenshot"
+    assert evidence["file_path"] == "steps/00-competitor-discovery/competitor-a-app-store.png"
   end
 end

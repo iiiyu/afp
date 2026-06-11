@@ -15,6 +15,8 @@ opportunities/
   [uuid]/
     README.md
     steps/
+      NN-<step>.md
+      NN-<step>/        (optional per-step evidence materials)
 AGENTS.md
 CLAUDE.md
 .skills/
@@ -34,7 +36,7 @@ automatically. If an existing repo has a misspelled `AGENETS.md`, AFP reports
 it in health notes and expects the file to be renamed before the repo can
 become healthy.
 
-All of these files are AFP-owned template files (template version 3). The
+All of these files are AFP-owned template files (template version 4). The
 repo template source lives in `priv/opportunity_repo_template/`.
 
 ## Research Pipeline
@@ -58,6 +60,18 @@ updates the `opportunities` row with `total_score`, `route`, and
 `latest_summary`. There is no `generated_other_files/` directory; every
 artifact has a fixed name.
 
+## Evidence Materials
+
+Beyond its main artifact, each step may keep supporting evidence files —
+competitor analyses, pros/cons notes, review excerpt compilations, and real
+product screenshots — under its own `steps/NN-<step>/` directory. Selection
+follows the 20-80 rule: only the most decision-relevant ~20% of encountered
+materials, with a hard cap of 3 files per step, in Markdown or image formats
+(the only formats AFP previews). Every kept file is linked from the step's
+main artifact and registered in `opportunity_step_evidence` with a title, a
+kind (`analysis` / `screenshot` / `source_excerpt`), why it matters, and its
+source URL. Screenshots must be real; fabricated evidence is forbidden.
+
 ## Health Rules
 
 AFP marks a configured repo `healthy` when:
@@ -79,7 +93,8 @@ When AFP inspects a configured repo whose `base.sqlite` holds the core tables,
 it automatically and non-destructively upgrades the repo:
 
 - adds the v2 `agent` columns when missing,
-- creates the v3 `opportunity_step_results` table when missing,
+- creates the v3 `opportunity_step_results` and v4 `opportunity_step_evidence`
+  tables when missing,
 - when `repo_metadata.template_version` is missing or older than the current
   template, overwrites all AFP-owned template files (`AGENTS.md`, `CLAUDE.md`,
   `README.md`, `.gitignore`, everything under `.skills/`) and records the new
@@ -90,7 +105,7 @@ Opportunity folders under `opportunities/` are never touched by upgrades.
 ## base.sqlite
 
 The repo-local SQLite database is intentionally portable and small
-(schema version 3):
+(schema version 4):
 
 - `repo_metadata` - schema version, template version, display name, and repo
   metadata.
@@ -106,6 +121,10 @@ The repo-local SQLite database is intentionally portable and small
   summary, artifact path (relative to the opportunity dir), structured
   payload, and timestamps. AFP pre-seeds all seven rows as `pending` at
   launch; the agent upserts each row as it completes a step.
+- `opportunity_step_evidence` - one row per kept evidence file (UNIQUE on
+  opportunity_id + file_path): run id, step key, title, kind, file path
+  (relative to the opportunity dir), why it matters, source URL, and
+  timestamps.
 - `opportunity_files` - Markdown/image file index for AFP's detail browser,
   with repo-relative path, file type, size, and mtime.
 
@@ -124,4 +143,5 @@ When AFP creates a new opportunity from a simple input, it:
    the Codex sandbox policy or Claude Code permission allow/deny rules.
 5. Updates `base.sqlite` as the agent reaches session, turn, completed, or
    failed states; the agent itself records per-step progress in
-   `opportunity_step_results`.
+   `opportunity_step_results` and kept evidence files in
+   `opportunity_step_evidence`.

@@ -178,6 +178,7 @@ defmodule AfpWeb.OpportunitiesLive do
         |> assign(:opportunity_runs, runs)
         |> assign(:opportunity_files, files)
         |> assign(:step_results, step_results_for(id))
+        |> assign(:step_evidence, step_evidence_for(id))
         |> assign(:active_run, Enum.find(runs, &(&1["status"] == "running")))
         |> assign_selected_file(id, selected_path)
 
@@ -195,6 +196,13 @@ defmodule AfpWeb.OpportunitiesLive do
     end
   end
 
+  defp step_evidence_for(opportunity_id) do
+    case Opportunities.list_step_evidence(opportunity_id) do
+      evidence when is_list(evidence) -> Enum.group_by(evidence, & &1["step_key"])
+      _error -> %{}
+    end
+  end
+
   defp clear_selected(socket) do
     socket
     |> assign(:selected_opportunity, nil)
@@ -205,6 +213,7 @@ defmodule AfpWeb.OpportunitiesLive do
     |> assign(:selected_file, nil)
     |> assign(:run_activity, [])
     |> assign(:step_results, [])
+    |> assign(:step_evidence, %{})
   end
 
   # Live activity arrives much faster than the step rows change; reload the
@@ -249,6 +258,10 @@ defmodule AfpWeb.OpportunitiesLive do
 
   defp step_max_score(%{"step_index" => 6}), do: 100
   defp step_max_score(_step), do: 20
+
+  defp evidence_icon("screenshot"), do: "hero-photo"
+  defp evidence_icon("source_excerpt"), do: "hero-chat-bubble-bottom-center-text"
+  defp evidence_icon(_kind), do: "hero-document-magnifying-glass"
 
   defp step_artifact_available?(step, files) do
     Enum.any?(files, &(&1.relative_path == step["artifact_path"]))
@@ -635,6 +648,27 @@ defmodule AfpWeb.OpportunitiesLive do
                           <p :if={step["summary"]} class="mt-0.5 truncate text-xs text-slate-500">
                             {step["summary"]}
                           </p>
+                          <div
+                            :if={Map.has_key?(@step_evidence, step["step_key"])}
+                            class="mt-1 space-y-0.5"
+                          >
+                            <button
+                              :for={item <- @step_evidence[step["step_key"]]}
+                              id={"step-evidence-#{item["id"]}"}
+                              type="button"
+                              phx-click="select_file"
+                              phx-value-path={item["file_path"]}
+                              class="flex max-w-full items-center gap-1.5 text-left text-xs text-slate-500 hover:text-slate-950 hover:underline dark:hover:text-white"
+                              title={item["why_it_matters"]}
+                            >
+                              <.icon
+                                name={evidence_icon(item["kind"])}
+                                class="size-3.5 shrink-0 text-slate-400"
+                              />
+                              <span class="truncate">{item["title"]}</span>
+                              <span class="shrink-0 text-slate-400">{item["kind"]}</span>
+                            </button>
+                          </div>
                         </div>
                         <button
                           :if={step_artifact_available?(step, @opportunity_files)}

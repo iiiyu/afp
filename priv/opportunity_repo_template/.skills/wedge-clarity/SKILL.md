@@ -53,3 +53,14 @@ Verification:
     `wedge_segment`, `wedge_job`, `incumbent_failure`, `proposed_angle`,
     `smallest_complete_solution`, `non_goals`, `reasoning`, `uncertainty`,
     `next_route`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/04-wedge-clarity/` (see `AGENTS.md` -> Evidence
+Materials):
+
+- a short gap-comparison note: the wedge job vs. how each incumbent fails it,
+  with the strongest supporting quotes
+- a screenshot showing the unserved workflow or segment
+
+Keep only what connects the wedge to evidence rather than preference.

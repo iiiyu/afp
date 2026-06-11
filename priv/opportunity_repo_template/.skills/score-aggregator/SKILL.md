@@ -50,6 +50,11 @@ Verification:
     `evidence_quality_summary`, `hard_blockers`, `route`, `reason`,
     `next_action`, `required_human_decision`
 
+## Evidence Materials
+
+This step normally keeps no new evidence files: it aggregates the registered
+evidence of steps 0-5. Reference existing evidence by path instead of copying.
+
 ## Final Updates (required)
 
 After recording the step row, finish the pipeline:

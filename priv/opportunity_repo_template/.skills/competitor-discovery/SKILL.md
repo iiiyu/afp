@@ -45,3 +45,13 @@ Verification:
   - `payload_json` = compact JSON with `normalized_opportunity`,
     `competitors` (name/type/source/relevance), `missing_information`,
     and `confidence`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/00-competitor-discovery/` (see `AGENTS.md` ->
+Evidence Materials for the rules and registration):
+
+- a real screenshot of a competitor's product page or app store listing
+- a short per-competitor profile note (positioning, pricing, who uses it)
+
+Keep only what makes the three picks defensible; skip generic marketing pages.

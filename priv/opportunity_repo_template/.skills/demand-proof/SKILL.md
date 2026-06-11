@@ -49,3 +49,13 @@ Verification:
   - `artifact_path = 'steps/01-demand-proof.md'`
   - `payload_json` = compact JSON with `score`, `evidence_strength`,
     `evidence_items`, `reasoning`, `uncertainty`, `next_route`
+
+## Evidence Materials (optional, max 3, 20-80 rule)
+
+Worth keeping under `steps/01-demand-proof/` (see `AGENTS.md` -> Evidence
+Materials):
+
+- a screenshot of review counts / ratings that anchor the score
+- an excerpt compilation of the strongest community threads or search signals
+
+Keep only the items that directly justify the demand score.
