@@ -17,7 +17,7 @@ defmodule Afp.Factory.Opportunities do
   @opportunities_path "opportunities"
   @steps_path "steps"
   @schema_version 4
-  @template_version 4
+  @template_version 5
   @core_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
   @required_tables @core_tables ++ ["opportunity_step_results", "opportunity_step_evidence"]
   @agent_tables ~w(opportunities opportunity_runs)

@@ -36,7 +36,7 @@ automatically. If an existing repo has a misspelled `AGENETS.md`, AFP reports
 it in health notes and expects the file to be renamed before the repo can
 become healthy.
 
-All of these files are AFP-owned template files (template version 4). The
+All of these files are AFP-owned template files (template version 5). The
 repo template source lives in `priv/opportunity_repo_template/`.
 
 ## Research Pipeline
@@ -55,8 +55,10 @@ directory, and records one row in `opportunity_step_results`:
 | 5 | `build_distribution_feasibility` | `steps/05-build-distribution-feasibility.md` | 0-20 |
 | 6 | `score_aggregator` | `steps/06-score-aggregator.md` | 0-100 total |
 
-Step 6 also rewrites the opportunity `README.md` as the final summary and
-updates the `opportunities` row with `total_score`, `route`, and
+Step 0 rewrites the opportunity `title` with the normalized opportunity so
+the list view reads like a product hypothesis instead of the raw input. Step
+6 rewrites the opportunity `README.md` as the final summary and updates the
+`opportunities` row with the final `title`, `total_score`, `route`, and
 `latest_summary`. There is no `generated_other_files/` directory; every
 artifact has a fixed name.
 

@@ -62,10 +62,14 @@ After recording the step row, finish the pipeline:
 1. Rewrite the opportunity `README.md` as the final summary: normalized
    opportunity, indicator score table, route, reason, uncertainty, and the
    concrete next action.
-2. Update the `opportunities` row in `base.sqlite`:
+2. Update the `opportunities` row in `base.sqlite`, including the final
+   readable title (refine the normalized title from step 0 if the research
+   sharpened it; short, specific, in the language of the raw input — never
+   the raw command text):
 
 ```bash
 sqlite3 base.sqlite "UPDATE opportunities SET
+  title = '<final normalized title>',
   total_score = <total_score>,
   route = '<route>',
   latest_summary = '<route>: <one-line reason>',

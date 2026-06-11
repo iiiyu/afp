@@ -33,6 +33,13 @@ defmodule Afp.Factory.OpportunitiesTest do
     end
 
     assert File.read!(Path.join(path, "AGENTS.md")) =~ "App Opportunities Agent Instructions"
+
+    aggregator_skill = File.read!(Path.join(path, ".skills/score-aggregator/SKILL.md"))
+    assert aggregator_skill =~ "title = '<final normalized title>'"
+
+    discovery_skill = File.read!(Path.join(path, ".skills/competitor-discovery/SKILL.md"))
+    assert discovery_skill =~ "title = '<normalized opportunity title>'"
+
     assert Opportunities.list_opportunities() == []
   end
 
@@ -227,7 +234,7 @@ defmodule Afp.Factory.OpportunitiesTest do
         stderr_to_stdout: true
       )
 
-    assert String.trim(version_output) == "4"
+    assert String.trim(version_output) == "5"
 
     assert {:ok, result} =
              Opportunities.create_opportunity(%{

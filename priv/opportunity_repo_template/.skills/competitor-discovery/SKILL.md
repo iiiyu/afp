@@ -35,6 +35,18 @@ Verification:
 
 - Write the full output to `steps/00-competitor-discovery.md` inside the
   opportunity directory.
+- Rewrite the opportunity title with the normalized opportunity, so the list
+  view reads like a product hypothesis instead of the raw command. Keep it
+  short (under ~80 characters), specific, and in the language of the raw
+  input — e.g. "LunaSolCal 调研：日月历算 App 与可靠每日提醒缺口", never
+  "帮我调研这个app":
+
+```bash
+sqlite3 base.sqlite "UPDATE opportunities SET
+  title = '<normalized opportunity title>',
+  updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+WHERE id = '<OPPORTUNITY_ID>';"
+```
 - Record the step in `opportunity_step_results` using the upsert template in
   `AGENTS.md` -> Step Recording with:
   - `step_key = 'competitor_discovery'`, `step_index = 0`
