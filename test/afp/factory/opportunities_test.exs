@@ -22,9 +22,17 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert File.regular?(Path.join(path, "base.sqlite"))
     assert File.dir?(Path.join(path, "opportunities"))
     assert File.regular?(Path.join(path, "AGENTS.md"))
+    assert File.regular?(Path.join(path, "CLAUDE.md"))
     assert File.dir?(Path.join(path, ".skills"))
     assert File.regular?(Path.join(path, ".skills/opportunity-research/SKILL.md"))
     assert File.dir?(Path.join(path, ".git"))
+
+    for step <- ~w(competitor-discovery demand-proof pain-strength incumbent-weakness
+                   wedge-clarity build-distribution-feasibility score-aggregator) do
+      assert File.regular?(Path.join(path, ".skills/#{step}/SKILL.md"))
+    end
+
+    assert File.read!(Path.join(path, "AGENTS.md")) =~ "App Opportunities Agent Instructions"
     assert Opportunities.list_opportunities() == []
   end
 
@@ -64,7 +72,8 @@ defmodule Afp.Factory.OpportunitiesTest do
 
     opportunity_root = Path.join([path, "opportunities", opportunity["id"]])
     assert File.regular?(Path.join(opportunity_root, "README.md"))
-    assert File.dir?(Path.join(opportunity_root, Opportunities.generated_files_path()))
+    assert File.dir?(Path.join(opportunity_root, Opportunities.steps_path()))
+    refute File.dir?(Path.join(opportunity_root, "generated_other_files"))
 
     assert [listed] = Opportunities.list_opportunities()
     assert listed["id"] == opportunity["id"]
@@ -72,6 +81,14 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert [run] = Opportunities.list_runs(opportunity["id"])
     assert run["status"] == "completed"
     assert run["codex_session_id"] == opportunity["codex_session_id"]
+
+    steps = Opportunities.list_step_results(opportunity["id"])
+    assert length(steps) == 7
+    assert Enum.all?(steps, &(&1["status"] == "pending"))
+    assert Enum.map(steps, & &1["step_index"]) == Enum.to_list(0..6)
+    assert List.first(steps)["step_key"] == "competitor_discovery"
+    assert List.last(steps)["artifact_path"] == "steps/06-score-aggregator.md"
+    assert Enum.all?(steps, &(&1["run_id"] == run["id"]))
 
     assert {:ok, files} = Opportunities.list_opportunity_files(opportunity["id"])
     assert Enum.any?(files, &(&1.relative_path == "README.md"))
@@ -131,12 +148,14 @@ defmodule Afp.Factory.OpportunitiesTest do
              })
   end
 
-  test "configured repos without the agent column are upgraded in place" do
+  test "outdated repos are upgraded in place: columns, step table, and template files" do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
 
     db_path = Path.join(path, "base.sqlite")
 
+    # Rewind the repo to a pre-v3 state: no agent columns, no step table,
+    # old metadata versions, stale AGENTS.md, missing step skills and CLAUDE.md.
     {_output, 0} =
       System.cmd(
         "sqlite3",
@@ -145,15 +164,28 @@ defmodule Afp.Factory.OpportunitiesTest do
           """
           ALTER TABLE opportunities DROP COLUMN agent;
           ALTER TABLE opportunity_runs DROP COLUMN agent;
+          DROP TABLE opportunity_step_results;
           UPDATE repo_metadata SET value = '1' WHERE key = 'schema_version';
+          DELETE FROM repo_metadata WHERE key = 'template_version';
           """
         ],
         stderr_to_stdout: true
       )
 
+    File.write!(Path.join(path, "AGENTS.md"), "# OLD TEMPLATE\n")
+    File.rm!(Path.join(path, "CLAUDE.md"))
+    File.rm_rf!(Path.join(path, ".skills/competitor-discovery"))
+
     assert {:ok, repo} = Opportunities.refresh_configured_repo()
     assert repo["health_state"] == "healthy"
-    assert repo["schema_version"] == "2"
+    assert repo["schema_version"] == "3"
+
+    agents_md = File.read!(Path.join(path, "AGENTS.md"))
+    refute agents_md =~ "OLD TEMPLATE"
+    assert agents_md =~ "Research Pipeline"
+    assert File.regular?(Path.join(path, "CLAUDE.md"))
+    assert File.regular?(Path.join(path, ".skills/competitor-discovery/SKILL.md"))
+    assert File.regular?(Path.join(path, ".skills/score-aggregator/SKILL.md"))
 
     {output, 0} =
       System.cmd("sqlite3", [db_path, "SELECT name FROM pragma_table_info('opportunities')"],
@@ -162,6 +194,15 @@ defmodule Afp.Factory.OpportunitiesTest do
 
     assert output =~ "agent"
 
+    {version_output, 0} =
+      System.cmd(
+        "sqlite3",
+        [db_path, "SELECT value FROM repo_metadata WHERE key = 'template_version'"],
+        stderr_to_stdout: true
+      )
+
+    assert String.trim(version_output) == "3"
+
     assert {:ok, result} =
              Opportunities.create_opportunity(%{
                "raw_input" => "Upgraded repo launch",
@@ -169,5 +210,6 @@ defmodule Afp.Factory.OpportunitiesTest do
              })
 
     assert result.opportunity["agent"] == "claude_code"
+    assert length(Opportunities.list_step_results(result.opportunity["id"])) == 7
   end
 end

@@ -5,7 +5,7 @@
 AFP's primary discovery surface is `/opportunities`. It points at one local,
 portable opportunity repo and stores only the configured repo path in AFP's
 PostgreSQL `settings` table. The repo itself owns opportunity state through
-`base.sqlite` plus Markdown/image files.
+`base.sqlite` plus Markdown artifacts.
 
 ## Required Structure
 
@@ -14,23 +14,56 @@ base.sqlite
 opportunities/
   [uuid]/
     README.md
-    generated_other_files/
+    steps/
 AGENTS.md
+CLAUDE.md
 .skills/
-  opportunity-research/
-    SKILL.md
+  opportunity-research/SKILL.md
+  competitor-discovery/SKILL.md
+  demand-proof/SKILL.md
+  pain-strength/SKILL.md
+  incumbent-weakness/SKILL.md
+  wedge-clarity/SKILL.md
+  build-distribution-feasibility/SKILL.md
+  score-aggregator/SKILL.md
 ```
 
 `AGENTS.md` is the canonical entrypoint for the research agent (Codex or
-Claude Code). If an existing repo has a misspelled `AGENETS.md`, AFP reports it
-in health notes and expects the file to be renamed before the repo can become
-healthy.
+Claude Code); `CLAUDE.md` only points to it so Claude Code picks it up
+automatically. If an existing repo has a misspelled `AGENETS.md`, AFP reports
+it in health notes and expects the file to be renamed before the repo can
+become healthy.
+
+All of these files are AFP-owned template files (template version 3). The
+repo template source lives in `priv/opportunity_repo_template/`.
+
+## Research Pipeline
+
+Every opportunity is researched through seven ordered steps. Each step is its
+own skill, produces one fixed-name artifact under the opportunity's `steps/`
+directory, and records one row in `opportunity_step_results`:
+
+| # | step_key | Artifact | Score |
+|---|----------|----------|-------|
+| 0 | `competitor_discovery` | `steps/00-competitor-discovery.md` | none |
+| 1 | `demand_proof` | `steps/01-demand-proof.md` | 0-20 |
+| 2 | `pain_strength` | `steps/02-pain-strength.md` | 0-20 |
+| 3 | `incumbent_weakness` | `steps/03-incumbent-weakness.md` | 0-20 |
+| 4 | `wedge_clarity` | `steps/04-wedge-clarity.md` | 0-20 |
+| 5 | `build_distribution_feasibility` | `steps/05-build-distribution-feasibility.md` | 0-20 |
+| 6 | `score_aggregator` | `steps/06-score-aggregator.md` | 0-100 total |
+
+Step 6 also rewrites the opportunity `README.md` as the final summary and
+updates the `opportunities` row with `total_score`, `route`, and
+`latest_summary`. There is no `generated_other_files/` directory; every
+artifact has a fixed name.
 
 ## Health Rules
 
 AFP marks a configured repo `healthy` when:
 
-- `base.sqlite` exists and contains the required tables.
+- `base.sqlite` exists and contains the required tables (including
+  `opportunity_step_results`).
 - `opportunities/` exists.
 - `AGENTS.md` exists.
 - `.skills/` exists.
@@ -40,39 +73,55 @@ reported as `agents_missing`. Other missing structural paths are reported as
 `invalid_structure`. A repo without `.git/` can still be used, but new repos
 initialized from AFP run `git init`.
 
+## Automatic In-Place Upgrade
+
+When AFP inspects a configured repo whose `base.sqlite` holds the core tables,
+it automatically and non-destructively upgrades the repo:
+
+- adds the v2 `agent` columns when missing,
+- creates the v3 `opportunity_step_results` table when missing,
+- when `repo_metadata.template_version` is missing or older than the current
+  template, overwrites all AFP-owned template files (`AGENTS.md`, `CLAUDE.md`,
+  `README.md`, `.gitignore`, everything under `.skills/`) and records the new
+  `schema_version`/`template_version`.
+
+Opportunity folders under `opportunities/` are never touched by upgrades.
+
 ## base.sqlite
 
 The repo-local SQLite database is intentionally portable and small
-(schema version 2):
+(schema version 3):
 
-- `repo_metadata` - schema version, display name, and repo metadata.
+- `repo_metadata` - schema version, template version, display name, and repo
+  metadata.
 - `opportunities` - one row per opportunity with raw input, title, source URL,
   launch agent (`codex` or `claude_code`), status, stage, route, total score,
   active run, agent session, latest summary, error, and timestamps.
 - `opportunity_runs` - one row per agent launch/run with launch agent, prompt,
   status, stage, session/thread/turn metadata, transcript path, final answer,
   error, payload, and timestamps.
+- `opportunity_step_results` - one row per pipeline step per opportunity
+  (UNIQUE on opportunity_id + step_key): run id, step key/index, status
+  (`pending` / `completed` / `failed`), score, evidence strength, one-line
+  summary, artifact path (relative to the opportunity dir), structured
+  payload, and timestamps. AFP pre-seeds all seven rows as `pending` at
+  launch; the agent upserts each row as it completes a step.
 - `opportunity_files` - Markdown/image file index for AFP's detail browser,
   with repo-relative path, file type, size, and mtime.
-
-Schema v1 repos (without the `agent` columns) are upgraded in place the next
-time AFP inspects the repo; existing rows default to `codex`.
 
 ## Agent Launch Boundary
 
 When AFP creates a new opportunity from a simple input, it:
 
-1. Generates a UUID and creates `opportunities/[uuid]/README.md`.
-2. Creates `opportunities/[uuid]/generated_other_files/`.
-3. Inserts the opportunity and queued run into `base.sqlite` with the selected
-   launch agent.
-4. Starts the selected agent with the opportunity repo as `cwd`: either a Codex
+1. Generates a UUID and creates `opportunities/[uuid]/README.md` plus an empty
+   `opportunities/[uuid]/steps/` directory.
+2. Inserts the opportunity, a queued run, and seven pending step rows into
+   `base.sqlite` with the selected launch agent.
+3. Starts the selected agent with the opportunity repo as `cwd`: either a Codex
    app-server turn (JSON-RPC over stdio) or a Claude Code headless run
    (`claude -p <prompt> --output-format stream-json`).
-5. Restricts writes to `opportunities/`, `.skills/`, and `base.sqlite` — via
+4. Restricts writes to `opportunities/`, `.skills/`, and `base.sqlite` — via
    the Codex sandbox policy or Claude Code permission allow/deny rules.
-6. Updates `base.sqlite` as the agent reaches session, turn, completed, or
-   failed states.
-
-The repo-local `.skills/opportunity-research/SKILL.md` carries the evidence caps
-and five-indicator scoring workflow used by the launch prompt.
+5. Updates `base.sqlite` as the agent reaches session, turn, completed, or
+   failed states; the agent itself records per-step progress in
+   `opportunity_step_results`.

@@ -46,7 +46,10 @@ defmodule AfpWeb.OpportunitiesLive do
       ) do
     case socket.assigns.selected_opportunity do
       %{"id" => ^opportunity_id} ->
-        {:noreply, append_run_activity(socket, message.activity)}
+        {:noreply,
+         socket
+         |> append_run_activity(message.activity)
+         |> maybe_refresh_selected(opportunity_id)}
 
       _selected ->
         {:noreply, socket}
@@ -174,6 +177,7 @@ defmodule AfpWeb.OpportunitiesLive do
         |> assign(:selected_opportunity, opportunity)
         |> assign(:opportunity_runs, runs)
         |> assign(:opportunity_files, files)
+        |> assign(:step_results, step_results_for(id))
         |> assign(:active_run, Enum.find(runs, &(&1["status"] == "running")))
         |> assign_selected_file(id, selected_path)
 
@@ -181,6 +185,13 @@ defmodule AfpWeb.OpportunitiesLive do
         socket
         |> put_flash(:error, "Opportunity not found.")
         |> clear_selected()
+    end
+  end
+
+  defp step_results_for(opportunity_id) do
+    case Opportunities.list_step_results(opportunity_id) do
+      steps when is_list(steps) -> steps
+      _error -> []
     end
   end
 
@@ -193,6 +204,24 @@ defmodule AfpWeb.OpportunitiesLive do
     |> assign(:selected_file_path, nil)
     |> assign(:selected_file, nil)
     |> assign(:run_activity, [])
+    |> assign(:step_results, [])
+  end
+
+  # Live activity arrives much faster than the step rows change; reload the
+  # selected opportunity's read model at most once per interval.
+  @selected_refresh_interval_ms 2_000
+
+  defp maybe_refresh_selected(socket, opportunity_id) do
+    now = System.monotonic_time(:millisecond)
+    last = socket.assigns[:last_selected_refresh_at] || 0
+
+    if now - last >= @selected_refresh_interval_ms do
+      socket
+      |> assign(:last_selected_refresh_at, now)
+      |> load_selected(opportunity_id)
+    else
+      socket
+    end
   end
 
   defp clear_run_activity_on_switch(socket, id) do
@@ -217,6 +246,13 @@ defmodule AfpWeb.OpportunitiesLive do
   defp activity_icon("tool"), do: "hero-wrench-screwdriver"
   defp activity_icon("tool_error"), do: "hero-exclamation-triangle"
   defp activity_icon(_kind), do: "hero-chat-bubble-left-ellipsis"
+
+  defp step_max_score(%{"step_index" => 6}), do: 100
+  defp step_max_score(_step), do: 20
+
+  defp step_artifact_available?(step, files) do
+    Enum.any?(files, &(&1.relative_path == step["artifact_path"]))
+  end
 
   defp files_for(opportunity_id) do
     case Opportunities.list_opportunity_files(opportunity_id) do
@@ -566,6 +602,53 @@ defmodule AfpWeb.OpportunitiesLive do
 
               <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
                 <main class="space-y-4">
+                  <.panel title="Research Steps">
+                    <:subtitle>
+                      Seven-step pipeline; one artifact and one base.sqlite record per step.
+                    </:subtitle>
+                    <div :if={@step_results == []}>
+                      <.empty_state message="No step records. This opportunity predates the step pipeline." />
+                    </div>
+                    <div
+                      :if={@step_results != []}
+                      class="divide-y divide-slate-100 dark:divide-slate-800"
+                    >
+                      <div
+                        :for={step <- @step_results}
+                        id={"research-step-#{step["step_key"]}"}
+                        class="flex items-center gap-3 py-2 text-sm"
+                      >
+                        <span class="w-5 shrink-0 text-xs text-slate-400">{step["step_index"]}</span>
+                        <div class="min-w-0 flex-1">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <.status_badge status={step["status"]} />
+                            <span class="font-medium text-slate-950 dark:text-white">
+                              {Opportunities.step_title(step["step_key"])}
+                            </span>
+                            <span :if={step["score"]} class="text-xs text-slate-500">
+                              {step["score"]}/{step_max_score(step)}
+                            </span>
+                            <span :if={step["evidence_strength"]} class="text-xs text-slate-500">
+                              evidence: {step["evidence_strength"]}
+                            </span>
+                          </div>
+                          <p :if={step["summary"]} class="mt-0.5 truncate text-xs text-slate-500">
+                            {step["summary"]}
+                          </p>
+                        </div>
+                        <button
+                          :if={step_artifact_available?(step, @opportunity_files)}
+                          type="button"
+                          phx-click="select_file"
+                          phx-value-path={step["artifact_path"]}
+                          class="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </.panel>
+
                   <.panel title="Files">
                     <:subtitle>
                       Markdown and image files under the selected opportunity directory.

@@ -88,11 +88,16 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert opportunity["agent"] == "claude_code"
     assert opportunity["status"] == "researched"
 
-    {:ok, _detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
 
     assert detail_html =~ "Agent Session"
     assert detail_html =~ "Claude Code"
     assert detail_html =~ "Fake Claude Code completed"
+
+    assert detail_html =~ "Research Steps"
+    assert detail_html =~ "Competitor Discovery"
+    assert detail_html =~ "Score Aggregator"
+    assert has_element?(detail_view, "#research-step-demand_proof")
   end
 
   test "renders live run activity on the detail page", %{conn: conn} do

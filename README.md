@@ -208,8 +208,9 @@ configuration records rather than direct ownership edges in the core domain.
 
 Opportunity discovery has a separate portable repo contract: AFP stores the
 configured repo path in `settings`, while the external repo stores
-`base.sqlite`, `opportunities/[uuid]/README.md`, generated files, `AGENTS.md`,
-and `.skills/`. See
+`base.sqlite`, `opportunities/[uuid]/README.md`, fixed-name step artifacts
+under `opportunities/[uuid]/steps/`, `AGENTS.md`, `CLAUDE.md`, and the
+seven-step pipeline skills under `.skills/`. See
 [`docs/opportunities-repo-contract.md`](docs/opportunities-repo-contract.md).
 
 ## Phase 2 Dogfood Loop
@@ -239,9 +240,10 @@ manual research flows, package handoff, and required repo-local SQLite boundary.
   demand, release, business, repository, and session queues grouped below it.
 - **Opportunities**: primary discovery console with first-run repo setup,
   existing repo health checks, simple input or URL launch with a per-launch
-  agent choice (Codex or Claude Code), opportunity table, detail file browser,
-  and live agent run state backed by repo-local `base.sqlite`, including an
-  ephemeral live-activity feed for Claude Code runs on the detail page.
+  agent choice (Codex or Claude Code), opportunity table, and a detail view
+  backed by repo-local `base.sqlite`: a seven-step research pipeline checklist
+  (one skill, one artifact, and one step record per step), file browser, live
+  agent run state, and an ephemeral live-activity feed for Claude Code runs.
 - **Demand**: legacy upstream demand-source console, with standard source repo
   scaffolding, configured research repos, editable source schedules, scheduled
   due-scan drafts, manual idea/URL research handoffs, candidate pickup, product

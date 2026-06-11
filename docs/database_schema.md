@@ -42,13 +42,18 @@ writes the repo-local `base.sqlite` database described in
 
 `base.sqlite` contains:
 
-- `repo_metadata` - schema version, display name, and repo metadata.
+- `repo_metadata` - schema version, template version, display name, and repo
+  metadata.
 - `opportunities` - raw input, normalized title, source URL, launch agent
   (`codex` or `claude_code`), status, stage, route, score, current run, agent
   session, latest summary, error, and timestamps.
 - `opportunity_runs` - agent launch prompt, launch agent, run status, stage,
   session/thread/turn metadata, transcript path, final answer, error, payload,
   and timestamps.
+- `opportunity_step_results` - one row per research pipeline step per
+  opportunity (`pending`/`completed`/`failed`), with step key/index, score,
+  evidence strength, summary, artifact path, and structured payload. Seven
+  rows are pre-seeded as `pending` per launch.
 - `opportunity_files` - Markdown/image files under `opportunities/[uuid]/`,
   with relative path, file type, size, mtime, and timestamps.
 
@@ -96,6 +101,7 @@ validated in Ecto changesets:
 - Opportunity repo health: `healthy`, `missing`, `sqlite_missing`, `sqlite_invalid`, `agents_missing`, `invalid_structure`.
 - Opportunity status in `base.sqlite`: `captured`, `queued`, `running`, `researched`, `failed`.
 - Opportunity run status in `base.sqlite`: `queued`, `running`, `completed`, `failed`.
+- Opportunity step result status in `base.sqlite`: `pending`, `completed`, `failed`.
 - Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.
 - Codex launch mode: `manual_handoff`, `direct_codex`.
 - Business posture: `unknown`, `grow`, `maintain`, `fix`, `harvest`, `pause`, `kill`.

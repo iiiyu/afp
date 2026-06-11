@@ -15,12 +15,85 @@ defmodule Afp.Factory.Opportunities do
   @agents_path "AGENTS.md"
   @skills_path ".skills"
   @opportunities_path "opportunities"
-  @generated_files_path "generated_other_files"
-  @schema_version 2
-  @required_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
+  @steps_path "steps"
+  @schema_version 3
+  @template_version 3
+  @core_tables ~w(repo_metadata opportunities opportunity_runs opportunity_files)
+  @required_tables @core_tables ++ ["opportunity_step_results"]
   @agent_tables ~w(opportunities opportunity_runs)
   @agents ~w(codex claude_code)
   @default_agent "codex"
+
+  @research_steps [
+    %{
+      key: "competitor_discovery",
+      index: 0,
+      title: "Competitor Discovery",
+      artifact: "steps/00-competitor-discovery.md",
+      max_score: nil
+    },
+    %{
+      key: "demand_proof",
+      index: 1,
+      title: "Demand Proof",
+      artifact: "steps/01-demand-proof.md",
+      max_score: 20
+    },
+    %{
+      key: "pain_strength",
+      index: 2,
+      title: "Pain Strength",
+      artifact: "steps/02-pain-strength.md",
+      max_score: 20
+    },
+    %{
+      key: "incumbent_weakness",
+      index: 3,
+      title: "Incumbent Weakness",
+      artifact: "steps/03-incumbent-weakness.md",
+      max_score: 20
+    },
+    %{
+      key: "wedge_clarity",
+      index: 4,
+      title: "Wedge Clarity",
+      artifact: "steps/04-wedge-clarity.md",
+      max_score: 20
+    },
+    %{
+      key: "build_distribution_feasibility",
+      index: 5,
+      title: "Build & Distribution Feasibility",
+      artifact: "steps/05-build-distribution-feasibility.md",
+      max_score: 20
+    },
+    %{
+      key: "score_aggregator",
+      index: 6,
+      title: "Score Aggregator",
+      artifact: "steps/06-score-aggregator.md",
+      max_score: 100
+    }
+  ]
+
+  # {priv template path, repo-relative destination}; all AFP-owned and
+  # overwritten in place when the repo template version is outdated.
+  @template_files [
+    {"AGENTS.md", "AGENTS.md"},
+    {"CLAUDE.md", "CLAUDE.md"},
+    {"README.md", "README.md"},
+    {"gitignore", ".gitignore"},
+    {".skills/README.md", ".skills/README.md"},
+    {".skills/opportunity-research/SKILL.md", ".skills/opportunity-research/SKILL.md"},
+    {".skills/competitor-discovery/SKILL.md", ".skills/competitor-discovery/SKILL.md"},
+    {".skills/demand-proof/SKILL.md", ".skills/demand-proof/SKILL.md"},
+    {".skills/pain-strength/SKILL.md", ".skills/pain-strength/SKILL.md"},
+    {".skills/incumbent-weakness/SKILL.md", ".skills/incumbent-weakness/SKILL.md"},
+    {".skills/wedge-clarity/SKILL.md", ".skills/wedge-clarity/SKILL.md"},
+    {".skills/build-distribution-feasibility/SKILL.md",
+     ".skills/build-distribution-feasibility/SKILL.md"},
+    {".skills/score-aggregator/SKILL.md", ".skills/score-aggregator/SKILL.md"}
+  ]
   @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
   @image_extensions ~w(.png .jpg .jpeg .gif .webp)
   @markdown_extensions ~w(.md .markdown)
@@ -148,6 +221,32 @@ defmodule Afp.Factory.Opportunities do
   def agent_label("claude_code"), do: "Claude Code"
   def agent_label(_agent), do: "Codex"
 
+  def research_steps, do: @research_steps
+
+  def step_title(step_key) do
+    case Enum.find(@research_steps, &(&1.key == step_key)) do
+      %{title: title} -> title
+      nil -> Factory.labelize(step_key)
+    end
+  end
+
+  def list_step_results(opportunity_id) do
+    with {:ok, repo} <- healthy_repo(),
+         {:ok, rows} <-
+           sqlite_json(
+             repo,
+             """
+             SELECT id, opportunity_id, run_id, step_key, step_index, status, score,
+                    evidence_strength, summary, artifact_path, created_at, updated_at
+             FROM opportunity_step_results
+             WHERE opportunity_id = #{sql_value(opportunity_id)}
+             ORDER BY step_index ASC
+             """
+           ) do
+      rows
+    end
+  end
+
   def list_opportunity_files(opportunity_id) do
     with {:ok, repo} <- healthy_repo(),
          {:ok, root} <- opportunity_root(repo, opportunity_id) do
@@ -199,7 +298,7 @@ defmodule Afp.Factory.Opportunities do
     Path.join([@opportunities_path, opportunity_id])
   end
 
-  def generated_files_path, do: @generated_files_path
+  def steps_path, do: @steps_path
   def base_sqlite_path, do: @base_sqlite_path
 
   defp configured_repo_from_setting(%{"repo_path" => repo_path} = setting)
@@ -249,6 +348,8 @@ defmodule Afp.Factory.Opportunities do
   end
 
   defp inspect_existing_repo(repo_path) do
+    :ok = maybe_upgrade_repo(repo_path)
+
     required_paths = [
       @base_sqlite_path,
       @opportunities_path,
@@ -370,7 +471,6 @@ defmodule Afp.Factory.Opportunities do
          table_names <- Enum.map(rows, &Map.get(&1, "name")),
          missing <- Enum.reject(@required_tables, &(&1 in table_names)),
          :ok <- ensure_no_missing_tables(missing),
-         :ok <- ensure_agent_columns(db_path),
          {:ok, version_rows} <-
            sqlite_json_path(
              db_path,
@@ -391,8 +491,40 @@ defmodule Afp.Factory.Opportunities do
   defp ensure_no_missing_tables([]), do: :ok
   defp ensure_no_missing_tables(missing), do: {:error, {:missing_tables, missing}}
 
-  # Upgrades schema v1 repos in place: v2 adds an `agent` column to the
-  # opportunities and opportunity_runs tables.
+  # Non-destructive, fully automatic in-place upgrade for repos whose
+  # base.sqlite already holds the core tables: adds the v2 `agent` columns,
+  # creates the v3 `opportunity_step_results` table, and overwrites all
+  # AFP-owned template files when the recorded template version is outdated.
+  defp maybe_upgrade_repo(repo_path) do
+    db_path = Path.join(repo_path, @base_sqlite_path)
+
+    with true <- File.regular?(db_path),
+         {:ok, rows} <-
+           sqlite_json_path(db_path, "SELECT name FROM sqlite_master WHERE type = 'table'"),
+         table_names <- Enum.map(rows, &Map.get(&1, "name")),
+         true <- Enum.all?(@core_tables, &(&1 in table_names)) do
+      upgrade_repo(repo_path, db_path)
+    else
+      _precondition_failed -> :ok
+    end
+  end
+
+  defp upgrade_repo(repo_path, db_path) do
+    with :ok <- ensure_agent_columns(db_path),
+         :ok <- sqlite_exec_path(db_path, step_results_table_sql()),
+         :ok <- ensure_template_files(repo_path, db_path) do
+      :ok
+    else
+      {:error, reason} ->
+        Logger.warning("Opportunity repo upgrade failed",
+          repo_path: repo_path,
+          reason: inspect(reason)
+        )
+
+        :ok
+    end
+  end
+
   defp ensure_agent_columns(db_path) do
     column_sql =
       Enum.map_join(@agent_tables, "\nUNION ALL\n", fn table ->
@@ -404,21 +536,66 @@ defmodule Afp.Factory.Opportunities do
       |> Enum.reject(fn table ->
         Enum.any?(rows, &(&1["table_name"] == table and &1["name"] == "agent"))
       end)
-      |> Enum.map(&"ALTER TABLE #{&1} ADD COLUMN agent TEXT NOT NULL DEFAULT 'codex';")
-      |> case do
-        [] ->
-          :ok
+      |> Enum.map_join("\n", &"ALTER TABLE #{&1} ADD COLUMN agent TEXT NOT NULL DEFAULT 'codex';")
+      |> then(&sqlite_exec_path(db_path, &1))
+    end
+  end
 
-        statements ->
-          sqlite_exec_path(db_path, Enum.join(statements ++ [schema_version_upgrade_sql()], "\n"))
+  defp ensure_template_files(repo_path, db_path) do
+    case stored_template_version(db_path) do
+      {:ok, version} when version >= @template_version ->
+        :ok
+
+      {:ok, _outdated} ->
+        display_name = stored_display_name(db_path) || display_name(repo_path)
+
+        with :ok <- write_template_files(repo_path, display_name) do
+          sqlite_exec_path(db_path, metadata_versions_sql())
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp stored_template_version(db_path) do
+    with {:ok, rows} <-
+           sqlite_json_path(
+             db_path,
+             "SELECT value FROM repo_metadata WHERE key = 'template_version' LIMIT 1"
+           ) do
+      case rows do
+        [%{"value" => value} | _rest] -> {:ok, parse_version(value)}
+        [] -> {:ok, 0}
       end
     end
   end
 
-  defp schema_version_upgrade_sql do
+  defp parse_version(value) do
+    case Integer.parse(to_string(value)) do
+      {version, _rest} -> version
+      :error -> 0
+    end
+  end
+
+  defp stored_display_name(db_path) do
+    case sqlite_json_path(
+           db_path,
+           "SELECT value FROM repo_metadata WHERE key = 'display_name' LIMIT 1"
+         ) do
+      {:ok, [%{"value" => value} | _rest]} -> Factory.trim_nil(value)
+      _missing -> nil
+    end
+  end
+
+  defp metadata_versions_sql do
+    now = now_iso()
+
     """
     INSERT INTO repo_metadata (key, value, updated_at)
-    VALUES ('schema_version', '#{@schema_version}', #{sql_value(now_iso())})
+    VALUES
+      ('schema_version', '#{@schema_version}', #{sql_value(now)}),
+      ('template_version', '#{@template_version}', #{sql_value(now)})
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
       updated_at = excluded.updated_at;
@@ -459,38 +636,38 @@ defmodule Afp.Factory.Opportunities do
 
   defp write_repo_files(repo_path, display_name) do
     with :ok <- mkdir(repo_path),
-         :ok <- mkdir(Path.join(repo_path, @opportunities_path)),
-         :ok <- mkdir(Path.join(repo_path, @skills_path)),
-         :ok <- write_file(repo_path, @agents_path, agents_md(display_name)),
-         :ok <- write_file(repo_path, "README.md", readme_md(display_name)),
-         :ok <- write_file(repo_path, Path.join(@skills_path, "README.md"), skills_readme_md()),
-         :ok <-
-           write_file(
-             repo_path,
-             Path.join([@skills_path, "opportunity-research", "SKILL.md"]),
-             opportunity_skill_md()
-           ),
-         :ok <- write_file(repo_path, ".gitignore", gitignore()) do
-      :ok
+         :ok <- mkdir(Path.join(repo_path, @opportunities_path)) do
+      write_template_files(repo_path, display_name)
     end
+  end
+
+  defp write_template_files(repo_path, display_name) do
+    Enum.reduce_while(@template_files, :ok, fn {source, destination}, :ok ->
+      content =
+        template_root()
+        |> Path.join(source)
+        |> File.read!()
+        |> String.replace("{{DISPLAY_NAME}}", display_name)
+
+      full_path = Path.join(repo_path, destination)
+
+      with :ok <- mkdir(Path.dirname(full_path)),
+           :ok <- File.write(full_path, content) do
+        {:cont, :ok}
+      else
+        {:error, reason} -> {:halt, {:error, {:write_failed, destination, reason}}}
+      end
+    end)
+  end
+
+  defp template_root do
+    Path.join(Application.app_dir(:afp, "priv"), "opportunity_repo_template")
   end
 
   defp mkdir(path) do
     case File.mkdir_p(path) do
       :ok -> :ok
       {:error, reason} -> {:error, {:mkdir_failed, path, reason}}
-    end
-  end
-
-  defp write_file(repo_path, relative_path, content) do
-    full_path = Path.join(repo_path, relative_path)
-
-    with :ok <- mkdir(Path.dirname(full_path)),
-         :ok <- File.write(full_path, content, [:exclusive]) do
-      :ok
-    else
-      {:error, :eexist} -> {:error, {:target_file_exists, relative_path}}
-      {:error, reason} -> {:error, {:write_failed, relative_path, reason}}
     end
   end
 
@@ -569,7 +746,7 @@ defmodule Afp.Factory.Opportunities do
     root = Path.join([repo["repo_path"], @opportunities_path, opportunity_id])
 
     with :ok <- mkdir(root),
-         :ok <- mkdir(Path.join(root, @generated_files_path)),
+         :ok <- mkdir(Path.join(root, @steps_path)),
          :ok <- File.write(Path.join(root, "README.md"), opportunity_readme(title, raw_input)) do
       :ok
     else
@@ -581,7 +758,7 @@ defmodule Afp.Factory.Opportunities do
   defp create_opportunity_run(repo, opportunity, raw_input, agent) do
     run_id = Ecto.UUID.generate()
     now = now_iso()
-    prompt = agent_prompt(repo, opportunity, raw_input)
+    prompt = agent_prompt(repo, opportunity, run_id, raw_input)
 
     with :ok <-
            sqlite_exec(
@@ -600,6 +777,8 @@ defmodule Afp.Factory.Opportunities do
                  stage = '#{agent_label(agent)} launch queued',
                  updated_at = #{sql_value(now)}
              WHERE id = #{sql_value(opportunity["id"])};
+
+             #{seed_step_results_sql(opportunity["id"], run_id, now)}
              """
            ) do
       run = %{
@@ -621,6 +800,26 @@ defmodule Afp.Factory.Opportunities do
 
       {:ok, run}
     end
+  end
+
+  # Pre-seeds one pending row per pipeline step so the UI shows the full
+  # checklist immediately; the agent upserts each row as steps complete.
+  defp seed_step_results_sql(opportunity_id, run_id, now) do
+    Enum.map_join(@research_steps, "\n", fn step ->
+      """
+      INSERT INTO opportunity_step_results
+        (id, opportunity_id, run_id, step_key, step_index, status, artifact_path,
+         payload_json, created_at, updated_at)
+      VALUES
+        (#{sql_value(Ecto.UUID.generate())}, #{sql_value(opportunity_id)}, #{sql_value(run_id)},
+         #{sql_value(step.key)}, #{step.index}, 'pending', #{sql_value(step.artifact)},
+         '{}', #{sql_value(now)}, #{sql_value(now)})
+      ON CONFLICT(opportunity_id, step_key) DO UPDATE SET
+        run_id = excluded.run_id,
+        status = 'pending',
+        updated_at = excluded.updated_at;
+      """
+    end)
   end
 
   defp start_agent_run(repo, opportunity, run, opts) do
@@ -941,6 +1140,7 @@ defmodule Afp.Factory.Opportunities do
       sqlite_allowed_operations: [
         "upsert_opportunity",
         "upsert_run",
+        "upsert_step_result",
         "link_file",
         "upsert_candidate"
       ],
@@ -1280,6 +1480,7 @@ defmodule Afp.Factory.Opportunities do
     INSERT INTO repo_metadata (key, value, updated_at)
     VALUES
       ('schema_version', '#{@schema_version}', #{sql_value(now)}),
+      ('template_version', '#{@template_version}', #{sql_value(now)}),
       ('display_name', #{sql_value(display_name)}, #{sql_value(now)})
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
@@ -1338,6 +1539,8 @@ defmodule Afp.Factory.Opportunities do
       FOREIGN KEY(opportunity_id) REFERENCES opportunities(id) ON DELETE CASCADE
     );
 
+    #{step_results_table_sql()}
+
     CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities(status);
     CREATE INDEX IF NOT EXISTS idx_opportunities_updated_at ON opportunities(updated_at);
     CREATE INDEX IF NOT EXISTS idx_opportunity_runs_opportunity ON opportunity_runs(opportunity_id);
@@ -1346,7 +1549,37 @@ defmodule Afp.Factory.Opportunities do
     """
   end
 
+  defp step_results_table_sql do
+    """
+    CREATE TABLE IF NOT EXISTS opportunity_step_results (
+      id TEXT PRIMARY KEY,
+      opportunity_id TEXT NOT NULL,
+      run_id TEXT,
+      step_key TEXT NOT NULL,
+      step_index INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      score INTEGER,
+      evidence_strength TEXT,
+      summary TEXT,
+      artifact_path TEXT,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(opportunity_id, step_key),
+      FOREIGN KEY(opportunity_id) REFERENCES opportunities(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_opportunity_step_results_opportunity
+      ON opportunity_step_results(opportunity_id);
+    """
+  end
+
   defp opportunity_readme(title, raw_input) do
+    step_lines =
+      Enum.map_join(@research_steps, "\n", fn step ->
+        "- `#{step.artifact}` - #{step.title}"
+      end)
+
     """
     # #{title}
 
@@ -1356,28 +1589,25 @@ defmodule Afp.Factory.Opportunities do
 
     ## Current Stage
 
-    Captured by AFP. The research agent should update this file as research
-    evidence, scoring, route decisions, and next actions become concrete.
+    Captured by AFP. The research agent executes the seven-step pipeline from
+    `AGENTS.md` and rewrites this file as the final summary in the last step.
 
-    ## Expected Outputs
+    ## Expected Step Artifacts
 
-    - Competitor discovery
-    - Five evidence-capped indicator scores
-    - Final route decision
-    - Concrete next action
-    - Supporting files under `#{@generated_files_path}/`
+    #{step_lines}
     """
   end
 
-  defp agent_prompt(repo, opportunity, raw_input) do
+  defp agent_prompt(repo, opportunity, run_id, raw_input) do
     relative_root = opportunity_relative_root(opportunity["id"])
 
     """
     You are working inside an AFP opportunity repo.
 
-    Read `AGENTS.md` and `.skills/opportunity-research/SKILL.md` first. Then use this raw demand input to create or update one opportunity:
+    Read `AGENTS.md` first, then execute the seven-step research pipeline it declares for this opportunity, in order, using the step skills under `#{@skills_path}/`.
 
     OPPORTUNITY_ID: #{opportunity["id"]}
+    OPPORTUNITY_RUN_ID: #{run_id}
     OPPORTUNITY_DIR: #{relative_root}
     BASE_SQLITE: #{@base_sqlite_path}
 
@@ -1385,378 +1615,15 @@ defmodule Afp.Factory.Opportunities do
     #{raw_input}
 
     Required work:
-    1. Keep all files for this opportunity under `#{relative_root}/`.
-    2. Update `#{relative_root}/README.md` with the normalized opportunity, evidence, five indicator scores, final route, uncertainty, and next action.
-    3. Put any extra Markdown notes or image artifacts under `#{relative_root}/#{@generated_files_path}/`.
-    4. Keep `#{@base_sqlite_path}` aligned with the final title, status, stage, score, route, run state, and file index when practical.
-    5. Do not invent evidence. Follow the evidence caps from `.skills/opportunity-research/SKILL.md`.
+    1. Execute all seven pipeline steps in order. Never skip, merge, or reorder steps.
+    2. Write each step's artifact to its fixed path under `#{relative_root}/#{@steps_path}/`.
+    3. After each step, upsert its row in `opportunity_step_results` (see AGENTS.md -> Step Recording) using OPPORTUNITY_ID and OPPORTUNITY_RUN_ID. The rows are pre-seeded as 'pending'.
+    4. Finish with the score aggregator: rewrite `#{relative_root}/README.md` as the final summary and update the opportunities row with total_score, route, and latest_summary.
+    5. Keep all files for this opportunity under `#{relative_root}/`.
+    6. Do not invent evidence. Follow the evidence caps from the skills.
 
     Repo root: #{repo["repo_path"]}
     """
     |> String.trim()
-  end
-
-  defp agents_md(display_name) do
-    """
-    # #{display_name} Agent Instructions
-
-    This repository is an AFP opportunities repo. AFP owns the control-plane UI
-    and launches research agent runs (Codex or Claude Code). This repo owns
-    portable opportunity evidence, Markdown summaries, generated files, and the
-    repo-local `#{@base_sqlite_path}` index.
-
-    ## Required Structure
-
-    - `#{@base_sqlite_path}` - repo-local SQLite index for opportunities, runs, and files
-    - `#{@opportunities_path}/[uuid]/README.md` - one opportunity summary
-    - `#{@opportunities_path}/[uuid]/#{@generated_files_path}/` - extra generated Markdown or image files
-    - `#{@skills_path}/opportunity-research/SKILL.md` - reusable research harness
-
-    ## Read Order
-
-    1. `AGENTS.md`
-    2. `.skills/opportunity-research/SKILL.md`
-    3. `README.md`
-    4. The target `opportunities/[uuid]/README.md`
-    5. Existing files under the target opportunity directory
-    6. `base.sqlite` when structured state is needed
-
-    ## Core Rules
-
-    - Work only inside the target opportunity directory unless AFP explicitly asks for repo-wide edits.
-    - Keep `validation-ready`, `validation-sprint`, `build-ready`, backup, and reject decisions distinct.
-    - No evidence means a maximum score of 5/20 for that indicator. Weak evidence means max 10/20. Medium evidence means max 15/20. Strong evidence can reach 20/20.
-    - If evidence is missing, mark it unknown instead of guessing.
-    - Do not turn a demand signal into a broad clone. Narrow to one credible wedge, packet, artifact, workflow, or first version.
-    - When updating `base.sqlite`, use the existing schema and keep paths relative to the repo root.
-    """
-  end
-
-  defp readme_md(display_name) do
-    """
-    # #{display_name}
-
-    Portable opportunity research repo for AFP.
-
-    ## Structure
-
-    - `#{@base_sqlite_path}` stores the opportunity index, agent runs, and file index.
-    - `#{@opportunities_path}/[uuid]/README.md` stores the main Markdown summary for one opportunity.
-    - `#{@opportunities_path}/[uuid]/#{@generated_files_path}/` stores additional Markdown notes and images.
-    - `#{@skills_path}/` stores repo-local skills the research agent should read before research.
-
-    ## base.sqlite Schema
-
-    - `repo_metadata` keeps schema and display metadata.
-    - `opportunities` stores raw input, title, launch agent, status, stage, route, score, session, and summary fields.
-    - `opportunity_runs` stores agent launch/run status, prompt, transcript/session metadata, final answer, and error state.
-    - `opportunity_files` stores Markdown/image files displayed by AFP.
-    """
-  end
-
-  defp skills_readme_md do
-    """
-    # Opportunity Repo Skills
-
-    The research agent (Codex or Claude Code) should read
-    `opportunity-research/SKILL.md` before working on a new opportunity. The
-    skill captures the evidence-capped competitor discovery and five-indicator
-    scoring workflow used by AFP.
-    """
-  end
-
-  defp opportunity_skill_md do
-    """
-    # Opportunity Research Skill
-
-    Use this skill when AFP gives a simple demand input, idea, need, or URL and
-    asks the research agent to create or update one opportunity folder.
-
-    ## Workflow
-
-    Simple Input
-    -> Competitor Discovery Harness
-    -> 5 Indicator Harnesses
-    -> Score Aggregator / Route Decision
-
-    Unified scoring caps:
-
-    - No evidence = max 5/20
-    - Weak evidence = max 10/20
-    - Medium evidence = max 15/20
-    - Strong evidence = max 20/20
-
-    If evidence is missing, do not guess. Mark unknown.
-
-    ## 0. Competitor Discovery Harness
-
-    You are a Competitor Discovery Harness.
-
-    Task:
-    Given a rough demand input, identify exactly 3 competitors or substitutes that users already use to solve this problem.
-
-    Input:
-    {{RAW_DEMAND_INPUT}}
-
-    Rules:
-    - Include direct competitors when possible.
-    - Include substitutes or manual workarounds if direct competitors are weak.
-    - Do not score the opportunity yet.
-    - Separate facts from assumptions.
-    - Mark uncertainty.
-
-    Output:
-    1. Normalized opportunity
-    2. Three competitors/substitutes:
-       - name
-       - type: direct competitor / indirect substitute / manual workaround
-       - source
-       - why it is relevant
-    3. Missing information
-    4. Confidence: high / medium / low
-
-    Verification:
-    - Are there exactly 3 competitors/substitutes?
-    - Is each one connected to the user job?
-    - Is each source traceable?
-
-    ## 1. Demand Proof Harness
-
-    You are a Demand Proof Scoring Harness.
-
-    Task:
-    Score whether real users are already seeking or using solutions for this demand.
-
-    Inputs:
-    - Raw demand: {{RAW_DEMAND_INPUT}}
-    - Normalized opportunity: {{NORMALIZED_OPPORTUNITY}}
-    - Competitors/substitutes: {{THREE_COMPETITORS}}
-
-    Evidence to find:
-    - active competitors
-    - review counts
-    - recent reviews
-    - search/keyword signals
-    - community discussions
-    - paid products
-    - users asking for alternatives
-
-    Output:
-    - score: 0-20
-    - evidence_strength: missing / weak / medium / strong
-    - evidence_items:
-      - source
-      - summary
-      - what it proves
-    - reasoning
-    - uncertainty
-    - next_route
-
-    Verification:
-    - Score is capped by evidence strength.
-    - Demand is proven by behavior, not model intuition.
-    - Recent or active usage is preferred.
-
-    ## 2. Pain Strength Harness
-
-    You are a Pain Strength Scoring Harness.
-
-    Task:
-    Score how frequent, intense, and specific the user pain appears to be.
-
-    Inputs:
-    - Normalized opportunity: {{NORMALIZED_OPPORTUNITY}}
-    - Competitors/substitutes: {{THREE_COMPETITORS}}
-    - Demand proof evidence: {{DEMAND_PROOF_EVIDENCE}}
-
-    Evidence to find:
-    - repeated complaints in reviews
-    - explicit user frustration
-    - time loss
-    - money loss
-    - repeated manual work
-    - privacy anxiety
-    - workflow errors
-    - high-frequency usage pattern
-
-    Output:
-    - score: 0-20
-    - evidence_strength
-    - pain_types: time / money / privacy / error / anxiety / friction
-    - frequency_hypothesis
-    - intensity_hypothesis
-    - evidence_items
-    - reasoning
-    - uncertainty
-    - next_route
-
-    Verification:
-    - Pain is tied to user evidence.
-    - Frequency and intensity are not invented.
-    - Repeated complaints score higher than isolated complaints.
-
-    ## 3. Incumbent Weakness Harness
-
-    You are an Incumbent Weakness Scoring Harness.
-
-    Task:
-    Score whether existing solutions have clear weaknesses that create an opening.
-
-    Inputs:
-    - Competitors/substitutes: {{THREE_COMPETITORS}}
-    - Review or source evidence: {{AVAILABLE_EVIDENCE}}
-
-    Evidence to find:
-    - pricing complaints
-    - subscription complaints
-    - bloated workflow
-    - poor UX
-    - missing export
-    - cloud dependency
-    - privacy concerns
-    - unreliable performance
-    - low rating with high usage
-    - underserved user segment
-
-    Output:
-    - score: 0-20
-    - evidence_strength
-    - weaknesses_by_competitor:
-      - competitor
-      - weakness
-      - source
-      - evidence summary
-    - cross_competitor_pattern
-    - reasoning
-    - uncertainty
-    - next_route
-
-    Verification:
-    - Weaknesses are evidence-backed.
-    - At least one weakness is tied to multiple users or competitors.
-    - Do not score high just because a competitor exists.
-
-    ## 4. Wedge Clarity Harness
-
-    You are a Wedge Clarity Scoring Harness.
-
-    Task:
-    Score whether there is a narrow, credible entry point for a smaller app.
-
-    Inputs:
-    - Demand model: {{DEMAND_MODEL}}
-    - Competitor weakness evidence: {{INCUMBENT_WEAKNESS_OUTPUT}}
-    - Pain evidence: {{PAIN_STRENGTH_OUTPUT}}
-
-    Evidence to use:
-    - underserved segment
-    - repeated unmet need
-    - manual workaround
-    - missing narrow workflow
-    - privacy/local-first complaint
-    - export or workflow gap
-    - pricing gap
-
-    Output:
-    - score: 0-20
-    - evidence_strength
-    - wedge_segment
-    - wedge_job
-    - incumbent_failure
-    - proposed_angle
-    - smallest_complete_solution
-    - non_goals
-    - reasoning
-    - uncertainty
-    - next_route
-
-    Verification:
-    - Wedge is not "make a better clone."
-    - Wedge is narrow enough for MVP.
-    - Wedge is connected to evidence, not preference.
-
-    ## 5. Build And Distribution Feasibility Harness
-
-    You are a Build And Distribution Feasibility Scoring Harness.
-
-    Task:
-    Score whether this opportunity can be built and distributed as a small first app.
-
-    Inputs:
-    - Normalized opportunity: {{NORMALIZED_OPPORTUNITY}}
-    - Wedge hypothesis: {{WEDGE_OUTPUT}}
-    - Competitors/substitutes: {{THREE_COMPETITORS}}
-    - Known constraints: {{CONSTRAINTS}}
-
-    Evidence to assess:
-    - MVP complexity
-    - platform/API difficulty
-    - regulatory risk
-    - trust burden
-    - dependency on network effects
-    - distribution channels
-    - App Store keyword/search entry
-    - community/SEO/GEO entry
-    - whether first version can complete one job
-
-    Output:
-    - score: 0-20
-    - evidence_strength
-    - build_feasibility
-    - distribution_feasibility
-    - hard_blockers
-    - first_version_boundary
-    - reasoning
-    - uncertainty
-    - next_route
-
-    Verification:
-    - Build score does not ignore distribution.
-    - High trust/legal/platform risk is flagged.
-    - A narrow first version is described.
-
-    ## Final Score Aggregator Harness
-
-    You are a Demand Item Score Aggregator.
-
-    Task:
-    Aggregate five evidence-backed indicator scores and route the Demand Item.
-
-    Inputs:
-    - Demand Proof: {{DEMAND_PROOF_OUTPUT}}
-    - Pain Strength: {{PAIN_STRENGTH_OUTPUT}}
-    - Incumbent Weakness: {{INCUMBENT_WEAKNESS_OUTPUT}}
-    - Wedge Clarity: {{WEDGE_CLARITY_OUTPUT}}
-    - Build And Distribution Feasibility: {{BUILD_DISTRIBUTION_OUTPUT}}
-
-    Routing rules:
-    - PRD Kit Ready: total >= 80, no indicator below 12, Demand Proof and Pain Strength are not weak/missing, no hard blocker.
-    - Backup Pool Strong: 65-79, promising but incomplete evidence.
-    - Backup Pool Weak: 50-64, too many unknowns.
-    - Reject: < 50, no demand proof, no wedge, or hard blocker.
-
-    Output:
-    - total_score: 0-100
-    - indicator_scores
-    - evidence_quality_summary
-    - hard_blockers
-    - route: PRD Kit Ready / Backup Pool Strong / Backup Pool Weak / Reject
-    - reason
-    - next_action
-    - required_human_decision
-
-    Verification:
-    - No score violates evidence cap.
-    - Route follows rules.
-    - Next action is concrete.
-    """
-  end
-
-  defp gitignore do
-    """
-    .DS_Store
-    *.sqlite-shm
-    *.sqlite-wal
-    """
   end
 end
