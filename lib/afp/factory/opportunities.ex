@@ -8,6 +8,7 @@ defmodule Afp.Factory.Opportunities do
   alias Afp.Factory.Demand.CodexAppClient
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities.ClaudeCodeClient
+  alias Afp.Factory.RepoSqlite
   alias Afp.Factory.Settings
 
   @setting_key "opportunity_repo"
@@ -221,6 +222,48 @@ defmodule Afp.Factory.Opportunities do
   end
 
   def create_opportunity(_attrs, _opts), do: {:error, :raw_input_required}
+
+  @doc """
+  Re-run an existing opportunity's research after a failed (or completed) run.
+
+  Reuses the stored `raw_input` and `agent`, carrying forward the most recent
+  run's model override. Creates a fresh run rather than mutating the old one,
+  so prior attempts stay in the run history.
+  """
+  def relaunch_opportunity(opportunity_id, opts \\ []) do
+    with {:ok, repo} <- healthy_repo(),
+         {:ok, opportunity} <- get_opportunity(opportunity_id),
+         {:ok, raw_input} <- raw_input(opportunity) do
+      agent = opportunity["agent"] || @default_agent
+      model = latest_run_model(opportunity_id)
+
+      with {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input, agent, model) do
+        case start_agent_run(repo, opportunity, run, opts) do
+          {:ok, result} -> {:ok, result}
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    end
+  end
+
+  # Most recent run's model override, so a re-run keeps the operator's choice.
+  defp latest_run_model(opportunity_id) do
+    opportunity_id
+    |> list_runs()
+    |> case do
+      [latest | _] -> run_model(latest)
+      _ -> nil
+    end
+  end
+
+  defp run_model(%{"payload_json" => json}) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, %{"model" => model}} when is_binary(model) and model != "" -> model
+      _ -> nil
+    end
+  end
+
+  defp run_model(_run), do: nil
 
   def supported_agents, do: @agents
 
@@ -1366,58 +1409,18 @@ defmodule Afp.Factory.Opportunities do
   defp sqlite_json(repo, sql) do
     repo["repo_path"]
     |> Path.join(@base_sqlite_path)
-    |> sqlite_json_path(sql)
+    |> RepoSqlite.query(sql)
   end
 
-  defp sqlite_json_path(db_path, sql) do
-    case System.cmd("sqlite3", ["-readonly", "-json", db_path, sql], stderr_to_stdout: true) do
-      {output, 0} -> decode_sqlite_json(output)
-      {output, _status} -> {:error, {:sqlite_error, String.trim(output)}}
-    end
-  rescue
-    error in ErlangError ->
-      case error.original do
-        :enoent -> {:error, :sqlite3_unavailable}
-        _other -> {:error, {:sqlite_error, Exception.message(error)}}
-      end
-  end
-
-  defp sqlite_exec(_repo, ""), do: :ok
+  defp sqlite_json_path(db_path, sql), do: RepoSqlite.query(db_path, sql)
 
   defp sqlite_exec(repo, sql) do
     repo["repo_path"]
     |> Path.join(@base_sqlite_path)
-    |> sqlite_exec_path(sql)
+    |> RepoSqlite.execute(sql)
   end
 
-  defp sqlite_exec_path(_db_path, ""), do: :ok
-
-  defp sqlite_exec_path(db_path, sql) do
-    case System.cmd("sqlite3", [db_path, sql], stderr_to_stdout: true) do
-      {_output, 0} -> :ok
-      {output, _status} -> {:error, {:sqlite_error, String.trim(output)}}
-    end
-  rescue
-    error in ErlangError ->
-      case error.original do
-        :enoent -> {:error, :sqlite3_unavailable}
-        _other -> {:error, {:sqlite_error, Exception.message(error)}}
-      end
-  end
-
-  defp decode_sqlite_json(output) do
-    output = String.trim(output)
-
-    if output == "" do
-      {:ok, []}
-    else
-      case Jason.decode(output) do
-        {:ok, rows} when is_list(rows) -> {:ok, rows}
-        {:ok, _value} -> {:error, :unexpected_sqlite_json}
-        {:error, error} -> {:error, {:invalid_sqlite_json, Exception.message(error)}}
-      end
-    end
-  end
+  defp sqlite_exec_path(db_path, sql), do: RepoSqlite.execute(db_path, sql)
 
   defp raw_input(attrs) do
     case attrs |> attr_value("raw_input") |> Factory.trim_nil() do
@@ -1482,17 +1485,7 @@ defmodule Afp.Factory.Opportunities do
   defp attr_atom("model"), do: :model
   defp attr_atom(_key), do: nil
 
-  defp sql_value(nil), do: "NULL"
-  defp sql_value(value) when is_integer(value), do: Integer.to_string(value)
-
-  defp sql_value(value) do
-    escaped =
-      value
-      |> to_string()
-      |> String.replace("'", "''")
-
-    "'#{escaped}'"
-  end
+  defp sql_value(value), do: RepoSqlite.escape(value)
 
   defp now_iso, do: Factory.now() |> DateTime.to_iso8601()
 

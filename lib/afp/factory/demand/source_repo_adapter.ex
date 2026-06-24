@@ -4,6 +4,7 @@
 defmodule Afp.Factory.Demand.SourceRepoAdapter do
   alias Afp.Factory
   alias Afp.Factory.Demand.SourceRepo
+  alias Afp.Factory.RepoSqlite
 
   @read_operations ~w(read_index read_candidates)
 
@@ -168,35 +169,9 @@ defmodule Afp.Factory.Demand.SourceRepoAdapter do
   end
 
   defp sqlite_json(%SourceRepo{} = source_repo, sql) do
-    db_path = Path.join(source_repo.repo_path, source_repo.sqlite_path || "demand.sqlite3")
-
-    case System.cmd("sqlite3", ["-readonly", "-json", db_path, sql], stderr_to_stdout: true) do
-      {output, 0} ->
-        decode_sqlite_json(output)
-
-      {output, _status} ->
-        {:error, {:sqlite_error, String.trim(output)}}
-    end
-  rescue
-    error in ErlangError ->
-      case error.original do
-        :enoent -> {:error, :sqlite3_unavailable}
-        _other -> {:error, {:sqlite_error, Exception.message(error)}}
-      end
-  end
-
-  defp decode_sqlite_json(output) do
-    output = String.trim(output)
-
-    if output == "" do
-      {:ok, []}
-    else
-      case Jason.decode(output) do
-        {:ok, rows} when is_list(rows) -> {:ok, rows}
-        {:ok, _value} -> {:error, :unexpected_sqlite_json}
-        {:error, error} -> {:error, {:invalid_sqlite_json, Exception.message(error)}}
-      end
-    end
+    source_repo.repo_path
+    |> Path.join(source_repo.sqlite_path || "demand.sqlite3")
+    |> RepoSqlite.query(sql)
   end
 
   defp quote_identifier(identifier) do

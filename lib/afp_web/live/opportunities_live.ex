@@ -149,6 +149,24 @@ defmodule AfpWeb.OpportunitiesLive do
     {:noreply, push_navigate(socket, to: ~p"/opportunities/#{id}")}
   end
 
+  def handle_event("relaunch_opportunity", %{"id" => id}, socket) do
+    case Opportunities.relaunch_opportunity(id) do
+      {:ok, %{opportunity: opportunity}} ->
+        agent_label = Opportunities.agent_label(opportunity["agent"])
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{agent_label} launch restarted.")
+         |> load_opportunities(current_params(socket))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, launch_error(reason))
+         |> load_opportunities(current_params(socket))}
+    end
+  end
+
   def handle_event("select_file", %{"path" => path}, socket) do
     case socket.assigns.selected_opportunity do
       nil ->
@@ -670,6 +688,15 @@ defmodule AfpWeb.OpportunitiesLive do
                   >
                     {@selected_opportunity["error"]}
                   </p>
+                  <div :if={@selected_opportunity["status"] == "failed"} class="lg:col-span-2">
+                    <.button
+                      phx-click="relaunch_opportunity"
+                      phx-value-id={@selected_opportunity["id"]}
+                      data-confirm="Re-run research for this opportunity?"
+                    >
+                      <.icon name="hero-arrow-path" class="size-4" /> Re-run research
+                    </.button>
+                  </div>
                 </div>
               </.panel>
 
