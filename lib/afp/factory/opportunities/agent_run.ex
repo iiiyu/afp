@@ -18,7 +18,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   alias Afp.Factory.Opportunities
   alias Afp.Factory.Opportunities.ClaudeCodeClient
   alias Afp.Factory.Opportunities.Files
-  alias Afp.Factory.RepoSqlite
+  alias Afp.Factory.Opportunities.Storage
 
   @default_agent "claude_code"
   @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
@@ -128,28 +128,14 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp persist_agent_run_started(repo, opportunity_id, run_id, agent) do
-    now = now_iso()
-
     :ok =
-      sqlite_exec(
+      Storage.mark_run_started(
         repo,
-        """
-        UPDATE opportunity_runs
-        SET status = 'running',
-            stage = 'starting',
-            started_at = COALESCE(started_at, #{RepoSqlite.escape(now)}),
-            updated_at = #{RepoSqlite.escape(now)},
-            error = NULL
-        WHERE id = #{RepoSqlite.escape(run_id)};
-
-        UPDATE opportunities
-        SET status = 'running',
-            stage = '#{Opportunities.agent_label(agent)} starting',
-            current_run_id = #{RepoSqlite.escape(run_id)},
-            updated_at = #{RepoSqlite.escape(now)},
-            error = NULL
-        WHERE id = #{RepoSqlite.escape(opportunity_id)};
-        """
+        %{
+          opportunity_id: opportunity_id,
+          run_id: run_id,
+          stage: "#{Opportunities.agent_label(agent)} starting"
+        }
       )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_started", %{
@@ -160,30 +146,20 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp persist_agent_progress(repo, opportunity_id, run_id, agent, :thread_started, payload) do
-    now = now_iso()
     thread = get_in(payload, ["result", "thread"]) || %{}
     session_id = thread["sessionId"] || thread["id"]
 
     :ok =
-      sqlite_exec(
+      Storage.mark_thread_started(
         repo,
-        """
-        UPDATE opportunity_runs
-        SET status = 'running',
-            stage = 'thread_started',
-            codex_session_id = #{RepoSqlite.escape(session_id)},
-            codex_thread_id = #{RepoSqlite.escape(thread["id"])},
-            transcript_path = #{RepoSqlite.escape(thread["path"])},
-            updated_at = #{RepoSqlite.escape(now)}
-        WHERE id = #{RepoSqlite.escape(run_id)};
-
-        UPDATE opportunities
-        SET status = 'running',
-            stage = '#{Opportunities.agent_label(agent)} session started',
-            codex_session_id = #{RepoSqlite.escape(session_id)},
-            updated_at = #{RepoSqlite.escape(now)}
-        WHERE id = #{RepoSqlite.escape(opportunity_id)};
-        """
+        %{
+          opportunity_id: opportunity_id,
+          run_id: run_id,
+          stage: "#{Opportunities.agent_label(agent)} session started",
+          session_id: session_id,
+          thread_id: thread["id"],
+          transcript_path: thread["path"]
+        }
       )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_thread_started", %{
@@ -196,26 +172,17 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp persist_agent_progress(repo, opportunity_id, run_id, agent, :turn_started, payload) do
-    now = now_iso()
     turn = get_in(payload, ["result", "turn"]) || %{}
 
     :ok =
-      sqlite_exec(
+      Storage.mark_turn_started(
         repo,
-        """
-        UPDATE opportunity_runs
-        SET status = 'running',
-            stage = 'turn_started',
-            codex_turn_id = #{RepoSqlite.escape(turn["id"])},
-            updated_at = #{RepoSqlite.escape(now)}
-        WHERE id = #{RepoSqlite.escape(run_id)};
-
-        UPDATE opportunities
-        SET status = 'running',
-            stage = '#{Opportunities.agent_label(agent)} turn started',
-            updated_at = #{RepoSqlite.escape(now)}
-        WHERE id = #{RepoSqlite.escape(opportunity_id)};
-        """
+        %{
+          opportunity_id: opportunity_id,
+          run_id: run_id,
+          stage: "#{Opportunities.agent_label(agent)} turn started",
+          turn_id: turn["id"]
+        }
       )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_turn_started", %{
@@ -247,32 +214,19 @@ defmodule Afp.Factory.Opportunities.AgentRun do
 
     with :ok <- Files.refresh_index(repo, opportunity_id),
          :ok <-
-           sqlite_exec(
+           Storage.mark_run_completed(
              repo,
-             """
-             UPDATE opportunity_runs
-             SET status = 'completed',
-                 stage = 'completed',
-                 codex_session_id = #{RepoSqlite.escape(session_id)},
-                 codex_thread_id = #{RepoSqlite.escape(thread["id"])},
-                 codex_turn_id = #{RepoSqlite.escape(turn["id"] || completed_turn["id"])},
-                 transcript_path = #{RepoSqlite.escape(thread["path"])},
-                 final_answer = #{RepoSqlite.escape(final_answer)},
-                 completed_at = #{RepoSqlite.escape(now)},
-                 updated_at = #{RepoSqlite.escape(now)},
-                 payload_json = #{RepoSqlite.escape(payload_json)},
-                 error = NULL
-             WHERE id = #{RepoSqlite.escape(run_id)};
-
-             UPDATE opportunities
-             SET status = 'researched',
-                 stage = 'Initial #{Opportunities.agent_label(agent)} research completed',
-                 codex_session_id = #{RepoSqlite.escape(session_id)},
-                 latest_summary = #{RepoSqlite.escape(final_answer)},
-                 updated_at = #{RepoSqlite.escape(now)},
-                 error = NULL
-             WHERE id = #{RepoSqlite.escape(opportunity_id)};
-             """
+             %{
+               opportunity_id: opportunity_id,
+               run_id: run_id,
+               stage: "Initial #{Opportunities.agent_label(agent)} research completed",
+               session_id: session_id,
+               thread_id: thread["id"],
+               turn_id: turn["id"] || completed_turn["id"],
+               transcript_path: thread["path"],
+               final_answer: final_answer,
+               payload_json: payload_json
+             }
            ) do
       Events.record_event("opportunity_run", run_id, "opportunity_run_completed", %{
         opportunity_id: opportunity_id,
@@ -285,27 +239,16 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp mark_agent_run_failed(repo, opportunity_id, run_id, agent, reason) do
-    now = now_iso()
     error_text = inspect(reason)
 
-    sqlite_exec(
+    Storage.mark_run_failed(
       repo,
-      """
-      UPDATE opportunity_runs
-      SET status = 'failed',
-          stage = 'failed',
-          error = #{RepoSqlite.escape(error_text)},
-          completed_at = #{RepoSqlite.escape(now)},
-          updated_at = #{RepoSqlite.escape(now)}
-      WHERE id = #{RepoSqlite.escape(run_id)};
-
-      UPDATE opportunities
-      SET status = 'failed',
-          stage = '#{Opportunities.agent_label(agent)} launch failed',
-          error = #{RepoSqlite.escape(error_text)},
-          updated_at = #{RepoSqlite.escape(now)}
-      WHERE id = #{RepoSqlite.escape(opportunity_id)};
-      """
+      %{
+        opportunity_id: opportunity_id,
+        run_id: run_id,
+        stage: "#{Opportunities.agent_label(agent)} launch failed",
+        error_text: error_text
+      }
     )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_failed", %{
@@ -403,9 +346,6 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   defp launch_client(_agent) do
     Application.get_env(:afp, :codex_app_client, CodexAppClient)
   end
-
-  defp sqlite_exec(%{"repo_path" => repo_path}, sql),
-    do: RepoSqlite.execute(Path.join(repo_path, @base_sqlite_path), sql)
 
   defp now_iso, do: Factory.now() |> DateTime.to_iso8601()
 end

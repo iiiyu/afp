@@ -9,8 +9,7 @@ defmodule Afp.Factory.Opportunities.Files do
   (via the context's health check) and pass it in.
   """
 
-  alias Afp.Factory
-  alias Afp.Factory.RepoSqlite
+  alias Afp.Factory.Opportunities.Storage
 
   @opportunities_path "opportunities"
   @image_extensions ~w(.png .jpg .jpeg .gif .webp)
@@ -63,26 +62,7 @@ defmodule Afp.Factory.Opportunities.Files do
   @doc "Upsert the opportunity_files index from the current on-disk files."
   def refresh_index(repo, opportunity_id) do
     with {:ok, files} <- list_opportunity_files_from_repo(repo, opportunity_id) do
-      statements =
-        Enum.map_join(files, "\n", fn file ->
-          now = now_iso()
-
-          """
-          INSERT INTO opportunity_files
-            (id, opportunity_id, relative_path, file_type, size_bytes, mtime, created_at, updated_at)
-          VALUES
-            (#{RepoSqlite.escape(Ecto.UUID.generate())}, #{RepoSqlite.escape(opportunity_id)},
-             #{RepoSqlite.escape(file.relative_path)}, #{RepoSqlite.escape(file.type)}, #{file.size_bytes},
-             #{RepoSqlite.escape(file.mtime)}, #{RepoSqlite.escape(now)}, #{RepoSqlite.escape(now)})
-          ON CONFLICT(opportunity_id, relative_path) DO UPDATE SET
-            file_type = excluded.file_type,
-            size_bytes = excluded.size_bytes,
-            mtime = excluded.mtime,
-            updated_at = excluded.updated_at;
-          """
-        end)
-
-      RepoSqlite.execute(db_path(repo), statements)
+      Storage.upsert_files(repo, opportunity_id, files)
     end
   end
 
@@ -188,8 +168,4 @@ defmodule Afp.Factory.Opportunities.Files do
       _extension -> "image/png"
     end
   end
-
-  defp db_path(%{"repo_path" => repo_path}), do: Path.join(repo_path, "base.sqlite")
-
-  defp now_iso, do: Factory.now() |> DateTime.to_iso8601()
 end
