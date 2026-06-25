@@ -2,7 +2,7 @@
 # @output - Deterministic fake Codex app-server launch responses
 # @pos    - Test-only replacement for the real Codex JSON-RPC stdio adapter
 defmodule Afp.Factory.Demand.FakeCodexAppClient do
-  @behaviour Afp.Factory.Demand.CodexAppClient
+  @behaviour Afp.Factory.AgentClient
 
   def launch_new_turn(attrs, opts \\ [])
 

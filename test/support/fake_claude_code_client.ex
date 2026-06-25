@@ -2,7 +2,7 @@
 # @output - Deterministic fake Claude Code headless launch responses
 # @pos    - Test-only replacement for the real claude CLI stream-json adapter
 defmodule Afp.Factory.Opportunities.FakeClaudeCodeClient do
-  @behaviour Afp.Factory.Opportunities.ClaudeCodeClient
+  @behaviour Afp.Factory.AgentClient
 
   def launch_new_turn(attrs, opts \\ [])
 

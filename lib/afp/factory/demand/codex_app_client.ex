@@ -6,7 +6,7 @@ defmodule Afp.Factory.Demand.CodexAppClient do
 
   require Logger
 
-  @callback launch_new_turn(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @behaviour Afp.Factory.AgentClient
 
   @client_info %{
     "name" => "afp",
@@ -51,6 +51,7 @@ defmodule Afp.Factory.Demand.CodexAppClient do
     "osascript"
   ]
 
+  @impl Afp.Factory.AgentClient
   def launch_new_turn(attrs, opts \\ []) when is_map(attrs) do
     timeout_ms = Keyword.get(opts, :timeout_ms, default_timeout_ms())
 

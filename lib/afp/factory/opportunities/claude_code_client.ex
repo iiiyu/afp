@@ -6,7 +6,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
 
   require Logger
 
-  @callback launch_new_turn(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  @behaviour Afp.Factory.AgentClient
 
   @safe_read_commands ~w(cat date find head ls pwd rg sed tail wc)
   @denied_bash_patterns [
@@ -22,6 +22,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
     "osascript *"
   ]
 
+  @impl Afp.Factory.AgentClient
   def launch_new_turn(attrs, opts \\ []) when is_map(attrs) do
     timeout_ms = Keyword.get(opts, :timeout_ms, default_timeout_ms())
     cwd = Map.fetch!(attrs, :cwd)
