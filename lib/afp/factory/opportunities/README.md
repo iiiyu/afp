@@ -24,6 +24,10 @@ rewritten in place for outdated repos).
   Markdown/image files, classifies them, refreshes the `opportunity_files`
   index in `base.sqlite`, and reads a single file (text or base64 image) with a
   path-escape guard.
+- `agent_run.ex` - Agent-run launch orchestration: runs a queued research turn
+  through Codex or the Claude Code client, synchronously or under a
+  Task.Supervisor, and persists the run/opportunity state transitions
+  (started, progress, success, failure) to `base.sqlite`.
 - `claude_code_client.ex` - Port-based adapter that runs
   `claude -p <prompt> --output-format stream-json` headlessly inside the
   opportunity repo, maps the init/result stream events onto the shared launch
