@@ -18,8 +18,12 @@ rewritten in place for outdated repos).
 
 - `../opportunities.ex` - Opportunity repo scaffold from the priv template,
   health inspection with automatic in-place upgrades, `base.sqlite`
-  reads/writes (opportunities, runs, step results, file index), Markdown/image
-  file previews, and bounded agent launch progress for Codex and Claude Code.
+  reads/writes (opportunities, runs, step results), and bounded agent launch
+  progress for Codex and Claude Code.
+- `files.ex` - File-browser concern for opportunity repos: walks the repo for
+  Markdown/image files, classifies them, refreshes the `opportunity_files`
+  index in `base.sqlite`, and reads a single file (text or base64 image) with a
+  path-escape guard.
 - `claude_code_client.ex` - Port-based adapter that runs
   `claude -p <prompt> --output-format stream-json` headlessly inside the
   opportunity repo, maps the init/result stream events onto the shared launch
