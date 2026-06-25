@@ -1,0 +1,19 @@
+{
+  "skill_name": "opportunity-to-buildspec",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "qr-research-full-pipeline",
+      "prompt": "把 /Users/ewan/Developer/Tmp/test-opportunities-repo/opportunities/0493b5d8-3e53-4a58-a6c5-d9a0922fca65 这个机会调研转成一套可以直接交给 AI code agent 进行开发、达到上架品质的产品设计 spec 包。",
+      "expected_output": "A spec/ directory with AGENT_BRIEF + 00-09 files: goal/DoD/non-goals carried verbatim from research, Given/When/Then behavior spec with edge-state matrix, design tokens, final copy incl. App Store listing, data contract with Safe Browsing-style API details, quality gates, requirement→oracle verification matrix with coverage tally, milestones with DoD as matrix IDs, assumptions table with risk+kill-tests. Should note the research routed this to backup pool.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "sparse-memo-web-tool",
+      "prompt": "I did some quick research on a product idea — see research-memo.md in the input folder. Turn it into a complete build spec package that an AI coding agent could implement to launch quality without asking me anything.",
+      "expected_output": "Same package structure despite non-standard sparse input. Platform decision made (likely responsive web app) and recorded as assumption or asked; anti-goals (no accounting features) preserved as non-goals; open questions from memo land in assumptions.md with kill-tests; final copy written (reminder email template etc.); verification matrix present.",
+      "files": ["research-memo.md"]
+    }
+  ]
+}

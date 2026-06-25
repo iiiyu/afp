@@ -3,11 +3,11 @@
 # @pos    - Agent-run launch orchestration for opportunities (Codex / Claude Code)
 defmodule Afp.Factory.Opportunities.AgentRun do
   @moduledoc """
-  Runs an opportunity's research turn through the chosen agent (Codex app-server
-  or the Claude Code CLI), synchronously or under a Task.Supervisor, and persists
-  the run/opportunity state transitions (started, progress, success, failure) to
-  the repo-local `base.sqlite`. Resolves the agent client and refreshes the file
-  index on success via `Opportunities.Files`.
+  Runs an opportunity research or build-spec turn through the chosen agent
+  (Codex app-server or the Claude Code CLI), synchronously or under a
+  Task.Supervisor, and persists the run/opportunity state transitions (started,
+  progress, success, failure) to the repo-local `base.sqlite`. Resolves the
+  agent client and refreshes the file index on success via `Opportunities.Files`.
   """
 
   require Logger
@@ -48,7 +48,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
           {:ok, %{opportunity: opportunity, run: run, launch_worker_pid: pid}}
         else
           {:error, reason} ->
-            mark_agent_run_failed(repo, opportunity["id"], run["id"], agent, reason)
+            mark_agent_run_failed(repo, opportunity["id"], run, agent, reason)
             {:error, reason}
         end
     end
@@ -72,18 +72,18 @@ defmodule Afp.Factory.Opportunities.AgentRun do
         persist_agent_success(repo, opportunity["id"], run, agent, launch_result)
 
       {:error, reason} ->
-        mark_agent_run_failed(repo, opportunity["id"], run["id"], agent, reason)
+        mark_agent_run_failed(repo, opportunity["id"], run, agent, reason)
         {:error, reason}
     end
   rescue
     exception ->
       reason = {:agent_launch_unhandled_failure, Exception.message(exception)}
-      mark_agent_run_failed(repo, opportunity["id"], run["id"], run["agent"], reason)
+      mark_agent_run_failed(repo, opportunity["id"], run, run["agent"], reason)
       {:error, reason}
   catch
     kind, reason ->
       failure = {:agent_launch_unhandled_failure, {kind, reason}}
-      mark_agent_run_failed(repo, opportunity["id"], run["id"], run["agent"], failure)
+      mark_agent_run_failed(repo, opportunity["id"], run, run["agent"], failure)
       {:error, failure}
   end
 
@@ -204,6 +204,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
 
   defp persist_agent_success(repo, opportunity_id, run, agent, launch_result) do
     run_id = run["id"]
+    run_type = run["run_type"] || "initial_research"
     now = now_iso()
     thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
@@ -219,7 +220,8 @@ defmodule Afp.Factory.Opportunities.AgentRun do
              %{
                opportunity_id: opportunity_id,
                run_id: run_id,
-               stage: "Initial #{Opportunities.agent_label(agent)} research completed",
+               stage: completion_stage(run_type, agent),
+               opportunity_status: completion_status(run_type),
                session_id: session_id,
                thread_id: thread["id"],
                turn_id: turn["id"] || completed_turn["id"],
@@ -238,7 +240,9 @@ defmodule Afp.Factory.Opportunities.AgentRun do
     end
   end
 
-  defp mark_agent_run_failed(repo, opportunity_id, run_id, agent, reason) do
+  defp mark_agent_run_failed(repo, opportunity_id, run, agent, reason) do
+    run_id = run["id"]
+    run_type = run["run_type"] || "initial_research"
     error_text = inspect(reason)
 
     Storage.mark_run_failed(
@@ -246,7 +250,8 @@ defmodule Afp.Factory.Opportunities.AgentRun do
       %{
         opportunity_id: opportunity_id,
         run_id: run_id,
-        stage: "#{Opportunities.agent_label(agent)} launch failed",
+        stage: failure_stage(run_type, agent),
+        opportunity_status: failure_status(run_type),
         error_text: error_text
       }
     )
@@ -266,6 +271,22 @@ defmodule Afp.Factory.Opportunities.AgentRun do
 
     :ok
   end
+
+  defp completion_stage("build_spec", _agent), do: "Build spec PRD completed"
+
+  defp completion_stage(_run_type, agent),
+    do: "Initial #{Opportunities.agent_label(agent)} research completed"
+
+  defp completion_status("build_spec"), do: "build_spec_ready"
+  defp completion_status(_run_type), do: "researched"
+
+  defp failure_stage("build_spec", _agent), do: "Build spec PRD generation failed"
+
+  defp failure_stage(_run_type, agent),
+    do: "#{Opportunities.agent_label(agent)} launch failed"
+
+  defp failure_status("build_spec"), do: "researched"
+  defp failure_status(_run_type), do: "failed"
 
   defp agent_launch_attrs(repo, opportunity, run) do
     repo_path = repo["repo_path"]

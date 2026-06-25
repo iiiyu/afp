@@ -47,9 +47,9 @@ writes the repo-local `base.sqlite` database described in
 - `opportunities` - raw input, normalized title, source URL, launch agent
   (`codex` or `claude_code`), status, stage, route, score, current run, agent
   session, latest summary, error, and timestamps.
-- `opportunity_runs` - agent launch prompt, launch agent, run status, stage,
-  session/thread/turn metadata, transcript path, final answer, error, payload,
-  and timestamps.
+- `opportunity_runs` - agent launch prompt, launch agent, run type
+  (`initial_research` or `build_spec`), run status, stage, session/thread/turn
+  metadata, transcript path, final answer, error, payload, and timestamps.
 - `opportunity_step_results` - one row per research pipeline step per
   opportunity (`pending`/`completed`/`failed`), with step key/index, score,
   evidence strength, summary, artifact path, and structured payload. Seven
@@ -59,7 +59,8 @@ writes the repo-local `base.sqlite` database described in
   (`analysis`/`screenshot`/`source_excerpt`), file path, why it matters, and
   source URL.
 - `opportunity_files` - Markdown/image files under `opportunities/[uuid]/`,
-  with relative path, file type, size, mtime, and timestamps.
+  including build-spec package files under `spec/`, with relative path, file
+  type, size, mtime, and timestamps.
 
 ## Important Constraints
 
@@ -103,7 +104,8 @@ validated in Ecto changesets:
 - Demand message target: `new_session`, `existing_session`, `manual_handoff`.
 - Demand sent message status: `draft`, `confirmed`, `sent`, `accepted`, `failed`, `superseded`.
 - Opportunity repo health: `healthy`, `missing`, `sqlite_missing`, `sqlite_invalid`, `agents_missing`, `invalid_structure`.
-- Opportunity status in `base.sqlite`: `captured`, `queued`, `running`, `researched`, `failed`.
+- Opportunity status in `base.sqlite`: `captured`, `queued`, `running`, `researched`, `build_spec_ready`, `failed`.
+- Opportunity run type in `base.sqlite`: `initial_research`, `build_spec`.
 - Opportunity run status in `base.sqlite`: `queued`, `running`, `completed`, `failed`.
 - Opportunity step result status in `base.sqlite`: `pending`, `completed`, `failed`.
 - Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.

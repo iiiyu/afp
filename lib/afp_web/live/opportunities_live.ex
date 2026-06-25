@@ -167,6 +167,22 @@ defmodule AfpWeb.OpportunitiesLive do
     end
   end
 
+  def handle_event("generate_build_spec", %{"id" => id}, socket) do
+    case Opportunities.generate_build_spec(id) do
+      {:ok, %{opportunity: opportunity}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "PRD/spec generation launched for #{opportunity["title"]}.")
+         |> load_opportunities(current_params(socket))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, launch_error(reason))
+         |> load_opportunities(current_params(socket))}
+    end
+  end
+
   def handle_event("select_file", %{"path" => path}, socket) do
     case socket.assigns.selected_opportunity do
       nil ->
@@ -421,6 +437,9 @@ defmodule AfpWeb.OpportunitiesLive do
   defp launch_error(:raw_input_required), do: "Input is required."
   defp launch_error({:unsupported_agent, agent}), do: "Unsupported agent: #{agent}."
   defp launch_error(:repo_path_required), do: "Configure an opportunity repo first."
+
+  defp launch_error(:opportunity_not_researched),
+    do: "Research must complete before PRD generation."
 
   defp launch_error({:repo_unhealthy, state}),
     do: "Opportunity repo is not healthy yet: #{state}."
@@ -695,6 +714,19 @@ defmodule AfpWeb.OpportunitiesLive do
                       data-confirm="Re-run research for this opportunity?"
                     >
                       <.icon name="hero-arrow-path" class="size-4" /> Re-run research
+                    </.button>
+                  </div>
+                  <div
+                    :if={@selected_opportunity["status"] == "researched" && is_nil(@active_run)}
+                    class="lg:col-span-2"
+                  >
+                    <.button
+                      id={"generate-build-spec-#{@selected_opportunity["id"]}"}
+                      phx-click="generate_build_spec"
+                      phx-value-id={@selected_opportunity["id"]}
+                      data-confirm="Generate a PRD/spec package from this opportunity research?"
+                    >
+                      <.icon name="hero-document-plus" class="size-4" /> Generate PRD spec
                     </.button>
                   </div>
                 </div>

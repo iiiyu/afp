@@ -17,6 +17,7 @@ opportunities/
     steps/
       NN-<step>.md
       NN-<step>/        (optional per-step evidence materials)
+    spec/               (post-research PRD/spec package)
 AGENTS.md
 CLAUDE.md
 .skills/
@@ -28,6 +29,7 @@ CLAUDE.md
   wedge-clarity/SKILL.md
   build-distribution-feasibility/SKILL.md
   score-aggregator/SKILL.md
+  opportunity-to-buildspec/SKILL.md
 ```
 
 `AGENTS.md` is the canonical entrypoint for the research agent (Codex or
@@ -36,7 +38,7 @@ automatically. If an existing repo has a misspelled `AGENETS.md`, AFP reports
 it in health notes and expects the file to be renamed before the repo can
 become healthy.
 
-All of these files are AFP-owned template files (template version 5). The
+All of these files are AFP-owned template files (template version 6). The
 repo template source lives in `priv/opportunity_repo_template/`.
 
 ## Research Pipeline
@@ -61,6 +63,19 @@ the list view reads like a product hypothesis instead of the raw input. Step
 `opportunities` row with the final `title`, `total_score`, `route`, and
 `latest_summary`. There is no `generated_other_files/` directory; every
 artifact has a fixed name.
+
+## Build Spec / PRD Package
+
+Once the seven-step research run completes and the opportunity status is
+`researched`, AFP can launch a separate `build_spec` run using the same selected
+agent. That run follows `.skills/opportunity-to-buildspec/SKILL.md`, reads the
+completed `README.md`, step artifacts, and evidence materials, and writes the
+agent-ready product package under `opportunities/[uuid]/spec/`.
+
+Build-spec runs do not rerun scoring, create app repositories, promote
+opportunities, or modify the step result rows. A successful build-spec run moves
+the opportunity to `build_spec_ready`; a failed build-spec run leaves the
+opportunity `researched` so the operator can retry.
 
 ## Evidence Materials
 
@@ -115,8 +130,9 @@ The repo-local SQLite database is intentionally portable and small
   launch agent (`codex` or `claude_code`), status, stage, route, total score,
   active run, agent session, latest summary, error, and timestamps.
 - `opportunity_runs` - one row per agent launch/run with launch agent, prompt,
-  status, stage, session/thread/turn metadata, transcript path, final answer,
-  error, payload, and timestamps.
+  run type (`initial_research` or `build_spec`), status, stage,
+  session/thread/turn metadata, transcript path, final answer, error, payload,
+  and timestamps.
 - `opportunity_step_results` - one row per pipeline step per opportunity
   (UNIQUE on opportunity_id + step_key): run id, step key/index, status
   (`pending` / `completed` / `failed`), score, evidence strength, one-line
@@ -147,3 +163,8 @@ When AFP creates a new opportunity from a simple input, it:
    failed states; the agent itself records per-step progress in
    `opportunity_step_results` and kept evidence files in
    `opportunity_step_evidence`.
+
+When AFP launches build-spec generation for a researched opportunity, it creates
+a fresh `opportunity_runs` row with `run_type = 'build_spec'`, starts the same
+Codex/Claude Code launch machinery with a prompt that names the build-spec
+skill, and expects generated files only under `opportunities/[uuid]/spec/`.

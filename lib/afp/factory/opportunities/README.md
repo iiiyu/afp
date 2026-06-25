@@ -9,17 +9,21 @@ The context keeps AFP's configured opportunity repo path in settings while the
 portable opportunity index, run state, per-step results, and file inventory
 live in the external repo's `base.sqlite`. Repo setup/health and all
 `base.sqlite` SQL sit behind internal modules so the context, file browser, and
-agent-run launcher do not each own table details. Opportunity research runs
-launch through one of two agents: the Codex app-server client (in `../demand/`)
-or the Claude Code CLI client in this folder. The agent executes the seven-step
-research pipeline declared by the repo template, whose source files live in
+agent-run launcher do not each own table details. Opportunity research and
+post-research build-spec runs launch through one of two agents: the Codex
+app-server client (in `../demand/`) or the Claude Code CLI client in this
+folder. The research agent executes the seven-step pipeline declared by the
+repo template; researched opportunities can then launch the
+`opportunity-to-buildspec` skill to write a PRD/spec package under
+`opportunities/<id>/spec/`. Template source files live in
 `priv/opportunity_repo_template/` (scaffolded for new repos and automatically
 rewritten in place for outdated repos).
 
 ## File Inventory
 
 - `../opportunities.ex` - Public context interface for configured repo
-  selection, opportunity creation/relaunch, file reads, and research-step reads.
+  selection, opportunity creation/relaunch, build-spec generation, file reads,
+  and research-step reads.
 - `repo_contract.ex` - Portable repo scaffold, health inspection, automatic
   in-place upgrade, and AFP-owned template file refresh.
 - `storage.ex` - Single storage interface for `base.sqlite` reads/writes:
@@ -31,10 +35,10 @@ rewritten in place for outdated repos).
   Markdown/image files, classifies them, delegates `opportunity_files` index
   writes to storage, and reads a single file (text or base64 image) with a
   path-escape guard.
-- `agent_run.ex` - Agent-run launch orchestration: runs a queued research turn
-  through Codex or the Claude Code client, synchronously or under a
-  Task.Supervisor, delegates run/opportunity state transitions (started,
-  progress, success, failure) to storage, and emits factory events.
+- `agent_run.ex` - Agent-run launch orchestration: runs a queued research or
+  build-spec turn through Codex or the Claude Code client, synchronously or
+  under a Task.Supervisor, delegates run/opportunity state transitions
+  (started, progress, success, failure) to storage, and emits factory events.
 - `claude_code_client.ex` - Port-based adapter that runs
   `claude -p <prompt> --output-format stream-json` headlessly inside the
   opportunity repo, maps the init/result stream events onto the shared launch

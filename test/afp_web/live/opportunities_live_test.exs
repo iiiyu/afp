@@ -61,12 +61,13 @@ defmodule AfpWeb.OpportunitiesLiveTest do
         assert html =~ opportunity["title"]
     end
 
-    {:ok, _detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
 
     assert detail_html =~ "Files"
     assert detail_html =~ "README.md"
     assert detail_html =~ "Receipt packet for restaurant shift disputes"
     assert detail_html =~ "Fake Codex completed"
+    assert has_element?(detail_view, "#generate-build-spec-#{opportunity["id"]}")
   end
 
   test "creates an opportunity with the Claude Code agent", %{conn: conn} do
@@ -143,6 +144,35 @@ defmodule AfpWeb.OpportunitiesLiveTest do
 
     assert html =~ "Top complaint themes"
     assert has_element?(view, "#research-step-pain_strength #step-evidence-ev-live-1")
+  end
+
+  test "detail page launches build spec generation for researched opportunities", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, %{opportunity: opportunity}} =
+      Opportunities.create_opportunity(%{
+        "raw_input" => "Receipt packet for shift disputes",
+        "agent" => "codex"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    assert has_element?(view, "#generate-build-spec-#{opportunity["id"]}")
+
+    view
+    |> element("#generate-build-spec-#{opportunity["id"]}")
+    |> render_click()
+
+    html = render(view)
+    assert html =~ "PRD/spec generation launched"
+    refute has_element?(view, "#generate-build-spec-#{opportunity["id"]}")
+
+    {:ok, updated} = Opportunities.get_opportunity(opportunity["id"])
+    assert updated["status"] == "build_spec_ready"
+
+    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity["id"])
+    assert build_spec_run["run_type"] == "build_spec"
+    assert initial_run["run_type"] == "initial_research"
   end
 
   test "launches with a custom model typed into the free-text field", %{conn: conn} do

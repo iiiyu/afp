@@ -36,12 +36,12 @@ defmodule Afp.Factory.Opportunities.Storage do
     sqlite_json(
       repo,
       """
-      SELECT id, opportunity_id, run_type, agent, status, stage, codex_session_id,
+      SELECT id, opportunity_id, run_type, agent, status, stage, prompt, codex_session_id,
              codex_thread_id, codex_turn_id, transcript_path, final_answer,
              error, started_at, completed_at, created_at, updated_at, payload_json
       FROM opportunity_runs
       WHERE opportunity_id = #{sql_value(opportunity_id)}
-      ORDER BY datetime(updated_at) DESC
+      ORDER BY datetime(updated_at) DESC, rowid DESC
       """
     )
     |> case do
@@ -149,6 +149,47 @@ defmodule Afp.Factory.Opportunities.Storage do
     end
   end
 
+  def insert_build_spec_run(repo, attrs) do
+    run_id = Map.fetch!(attrs, :id)
+    now = Factory.now() |> DateTime.to_iso8601()
+    payload_json = Jason.encode!(%{"model" => attrs.model})
+
+    with :ok <-
+           sqlite_exec(
+             repo,
+             """
+             INSERT INTO opportunity_runs
+               (id, opportunity_id, run_type, agent, status, stage, prompt, payload_json, created_at, updated_at)
+             VALUES
+               (#{sql_value(run_id)}, #{sql_value(attrs.opportunity_id)}, 'build_spec',
+                #{sql_value(attrs.agent)}, 'queued', 'queued', #{sql_value(attrs.prompt)},
+                #{sql_value(payload_json)}, #{sql_value(now)}, #{sql_value(now)});
+
+             UPDATE opportunities
+             SET current_run_id = #{sql_value(run_id)},
+                 status = 'queued',
+                 stage = #{sql_value(attrs.stage)},
+                 updated_at = #{sql_value(now)},
+                 error = NULL
+             WHERE id = #{sql_value(attrs.opportunity_id)};
+             """
+           ) do
+      {:ok,
+       %{
+         "id" => run_id,
+         "opportunity_id" => attrs.opportunity_id,
+         "run_type" => "build_spec",
+         "agent" => attrs.agent,
+         "model" => attrs.model,
+         "status" => "queued",
+         "stage" => "queued",
+         "prompt" => attrs.prompt,
+         "created_at" => now,
+         "updated_at" => now
+       }}
+    end
+  end
+
   def upsert_files(repo, opportunity_id, files) do
     files
     |> Enum.map_join("\n", &file_upsert_sql(opportunity_id, &1))
@@ -229,6 +270,7 @@ defmodule Afp.Factory.Opportunities.Storage do
 
   def mark_run_completed(repo, attrs) do
     now = now_iso()
+    opportunity_status = Map.get(attrs, :opportunity_status, "researched")
 
     sqlite_exec(
       repo,
@@ -248,7 +290,7 @@ defmodule Afp.Factory.Opportunities.Storage do
       WHERE id = #{sql_value(attrs.run_id)};
 
       UPDATE opportunities
-      SET status = 'researched',
+      SET status = #{sql_value(opportunity_status)},
           stage = #{sql_value(attrs.stage)},
           codex_session_id = #{sql_value(attrs.session_id)},
           latest_summary = #{sql_value(attrs.final_answer)},
@@ -261,6 +303,7 @@ defmodule Afp.Factory.Opportunities.Storage do
 
   def mark_run_failed(repo, attrs) do
     now = now_iso()
+    opportunity_status = Map.get(attrs, :opportunity_status, "failed")
 
     sqlite_exec(
       repo,
@@ -274,7 +317,7 @@ defmodule Afp.Factory.Opportunities.Storage do
       WHERE id = #{sql_value(attrs.run_id)};
 
       UPDATE opportunities
-      SET status = 'failed',
+      SET status = #{sql_value(opportunity_status)},
           stage = #{sql_value(attrs.stage)},
           error = #{sql_value(attrs.error_text)},
           updated_at = #{sql_value(now)}

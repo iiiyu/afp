@@ -15,6 +15,7 @@ defmodule Afp.Factory.Opportunities do
   @skills_path ".skills"
   @opportunities_path "opportunities"
   @steps_path "steps"
+  @build_spec_path "spec"
   @agents ~w(claude_code codex)
   @default_agent "claude_code"
 
@@ -197,6 +198,28 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
+  @doc """
+  Launches the post-research build-spec/PRD workflow for a researched opportunity.
+
+  The generated spec package is written under `opportunities/<id>/spec/` by the
+  selected agent using `.skills/opportunity-to-buildspec/SKILL.md`.
+  """
+  def generate_build_spec(opportunity_id, opts \\ []) do
+    with {:ok, repo} <- healthy_repo(),
+         {:ok, opportunity} <- get_opportunity(opportunity_id),
+         :ok <- ensure_researched(opportunity) do
+      agent = opportunity["agent"] || @default_agent
+      model = latest_run_model(opportunity_id)
+
+      with {:ok, run} <- create_build_spec_run(repo, opportunity, agent, model) do
+        case AgentRun.start_agent_run(repo, opportunity, run, opts) do
+          {:ok, result} -> {:ok, result}
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    end
+  end
+
   # Most recent run's model override, so a re-run keeps the operator's choice.
   defp latest_run_model(opportunity_id) do
     opportunity_id
@@ -268,6 +291,7 @@ defmodule Afp.Factory.Opportunities do
 
   def steps_path, do: @steps_path
   def base_sqlite_path, do: @base_sqlite_path
+  def build_spec_path, do: @build_spec_path
 
   defp configured_repo_from_setting(%{"repo_path" => repo_path} = setting)
        when is_binary(repo_path) and repo_path != "" do
@@ -362,6 +386,38 @@ defmodule Afp.Factory.Opportunities do
       {:ok, run}
     end
   end
+
+  defp create_build_spec_run(repo, opportunity, agent, model) do
+    run_id = Ecto.UUID.generate()
+    prompt = build_spec_prompt(repo, opportunity, run_id)
+
+    with {:ok, run} <-
+           Storage.insert_build_spec_run(repo, %{
+             id: run_id,
+             opportunity_id: opportunity["id"],
+             agent: agent,
+             model: model,
+             prompt: prompt,
+             stage: "#{agent_label(agent)} build-spec launch queued"
+           }) do
+      run = %{
+        run
+        | "id" => run_id,
+          "prompt" => prompt
+      }
+
+      Events.record_event("opportunity_run", run_id, "opportunity_build_spec_queued", %{
+        opportunity_id: opportunity["id"],
+        agent: agent,
+        model: model
+      })
+
+      {:ok, run}
+    end
+  end
+
+  defp ensure_researched(%{"status" => "researched"}), do: :ok
+  defp ensure_researched(_opportunity), do: {:error, :opportunity_not_researched}
 
   defp raw_input(attrs) do
     case attrs |> attr_value("raw_input") |> Factory.trim_nil() do
@@ -468,6 +524,40 @@ defmodule Afp.Factory.Opportunities do
     5. Finish with the score aggregator: rewrite `#{relative_root}/README.md` as the final summary and update the opportunities row with total_score, route, and latest_summary.
     6. Keep all files for this opportunity under `#{relative_root}/`.
     7. Do not invent evidence. Follow the evidence caps from the skills.
+
+    Repo root: #{repo["repo_path"]}
+    """
+    |> String.trim()
+  end
+
+  defp build_spec_prompt(repo, opportunity, run_id) do
+    relative_root = opportunity_relative_root(opportunity["id"])
+    spec_root = Path.join(relative_root, @build_spec_path)
+
+    """
+    You are working inside an AFP opportunity repo.
+
+    Read `AGENTS.md` first, then read `.skills/opportunity-to-buildspec/SKILL.md` and its referenced `references/spec-package-template.md`.
+
+    OPPORTUNITY_ID: #{opportunity["id"]}
+    OPPORTUNITY_RUN_ID: #{run_id}
+    OPPORTUNITY_DIR: #{relative_root}
+    SPEC_DIR: #{spec_root}
+    BASE_SQLITE: #{@base_sqlite_path}
+
+    Existing research input:
+    - Summary: #{relative_root}/README.md
+    - Step artifacts: #{relative_root}/#{@steps_path}/
+    - Evidence materials: files linked from the step artifacts and `opportunity_step_evidence`
+
+    Required work:
+    1. Use the existing opportunity research as the source material. Do not rerun the seven-step scoring pipeline.
+    2. Follow `.skills/opportunity-to-buildspec/SKILL.md` exactly and create the full PRD/spec package under `#{spec_root}/`.
+    3. Read every existing research artifact and evidence file before writing the package.
+    4. If the skill requires supplemental research for a product-spec gap, keep it narrowly scoped and cite the source.
+    5. Do not create an app repository, promote the opportunity, or begin implementation.
+    6. Keep all generated files inside `#{spec_root}/` and leave the research step artifacts intact.
+    7. Do not invent evidence. Put unresolved product decisions in `#{spec_root}/09-assumptions.md`.
 
     Repo root: #{repo["repo_path"]}
     """

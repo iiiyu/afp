@@ -28,7 +28,12 @@ defmodule Afp.Factory.Opportunities.RepoContract do
     {".skills/wedge-clarity/SKILL.md", ".skills/wedge-clarity/SKILL.md"},
     {".skills/build-distribution-feasibility/SKILL.md",
      ".skills/build-distribution-feasibility/SKILL.md"},
-    {".skills/score-aggregator/SKILL.md", ".skills/score-aggregator/SKILL.md"}
+    {".skills/score-aggregator/SKILL.md", ".skills/score-aggregator/SKILL.md"},
+    {".skills/opportunity-to-buildspec/SKILL.md", ".skills/opportunity-to-buildspec/SKILL.md"},
+    {".skills/opportunity-to-buildspec/references/spec-package-template.md",
+     ".skills/opportunity-to-buildspec/references/spec-package-template.md"},
+    {".skills/opportunity-to-buildspec/evals/evals.json",
+     ".skills/opportunity-to-buildspec/evals/evals.json"}
   ]
 
   def normalize_repo_path(nil), do: nil

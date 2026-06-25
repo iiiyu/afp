@@ -25,6 +25,15 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert File.regular?(Path.join(path, "CLAUDE.md"))
     assert File.dir?(Path.join(path, ".skills"))
     assert File.regular?(Path.join(path, ".skills/opportunity-research/SKILL.md"))
+    assert File.regular?(Path.join(path, ".skills/opportunity-to-buildspec/SKILL.md"))
+
+    assert File.regular?(
+             Path.join(
+               path,
+               ".skills/opportunity-to-buildspec/references/spec-package-template.md"
+             )
+           )
+
     assert File.dir?(Path.join(path, ".git"))
 
     for step <- ~w(competitor-discovery demand-proof pain-strength incumbent-weakness
@@ -169,6 +178,49 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert Jason.decode!(no_model_run["payload_json"])["model"] == nil
   end
 
+  test "generate_build_spec launches a post-research PRD spec run" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    assert {:ok, initial} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Receipt packet for restaurant shift disputes",
+               "agent" => "claude_code",
+               "model" => "claude-opus-4-8"
+             })
+
+    opportunity = initial.opportunity
+    assert opportunity["status"] == "researched"
+
+    assert {:ok, result} = Opportunities.generate_build_spec(opportunity["id"])
+
+    assert result.opportunity["status"] == "build_spec_ready"
+    assert result.opportunity["stage"] == "Build spec PRD completed"
+
+    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity["id"])
+    assert build_spec_run["run_type"] == "build_spec"
+    assert build_spec_run["agent"] == "claude_code"
+    assert Jason.decode!(build_spec_run["payload_json"])["model"] == "claude-opus-4-8"
+    assert build_spec_run["prompt"] =~ ".skills/opportunity-to-buildspec/SKILL.md"
+    assert build_spec_run["prompt"] =~ "opportunities/#{opportunity["id"]}/spec"
+    assert initial_run["run_type"] == "initial_research"
+  end
+
+  test "generate_build_spec only accepts researched opportunities" do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    assert {:ok, %{opportunity: opportunity}} =
+             Opportunities.create_opportunity(%{
+               "raw_input" => "Receipt packet for shift disputes"
+             })
+
+    assert {:ok, _result} = Opportunities.generate_build_spec(opportunity["id"])
+
+    assert {:error, :opportunity_not_researched} =
+             Opportunities.generate_build_spec(opportunity["id"])
+  end
+
   test "create_opportunity rejects unsupported agents" do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
@@ -208,6 +260,7 @@ defmodule Afp.Factory.OpportunitiesTest do
     File.write!(Path.join(path, "AGENTS.md"), "# OLD TEMPLATE\n")
     File.rm!(Path.join(path, "CLAUDE.md"))
     File.rm_rf!(Path.join(path, ".skills/competitor-discovery"))
+    File.rm_rf!(Path.join(path, ".skills/opportunity-to-buildspec"))
 
     assert {:ok, repo} = Opportunities.refresh_configured_repo()
     assert repo["health_state"] == "healthy"
@@ -219,6 +272,14 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert File.regular?(Path.join(path, "CLAUDE.md"))
     assert File.regular?(Path.join(path, ".skills/competitor-discovery/SKILL.md"))
     assert File.regular?(Path.join(path, ".skills/score-aggregator/SKILL.md"))
+    assert File.regular?(Path.join(path, ".skills/opportunity-to-buildspec/SKILL.md"))
+
+    assert File.regular?(
+             Path.join(
+               path,
+               ".skills/opportunity-to-buildspec/references/spec-package-template.md"
+             )
+           )
 
     {output, 0} =
       System.cmd("sqlite3", [db_path, "SELECT name FROM pragma_table_info('opportunities')"],
@@ -234,7 +295,7 @@ defmodule Afp.Factory.OpportunitiesTest do
         stderr_to_stdout: true
       )
 
-    assert String.trim(version_output) == "5"
+    assert String.trim(version_output) == "6"
 
     assert {:ok, result} =
              Opportunities.create_opportunity(%{

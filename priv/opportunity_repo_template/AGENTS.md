@@ -22,6 +22,10 @@ opportunity evidence, fixed-name step artifacts, and the repo-local
 3. The target `opportunities/[uuid]/README.md`
 4. Each step skill, in pipeline order, as you execute it
 
+For build-spec / PRD generation after research is complete, read
+`.skills/opportunity-to-buildspec/SKILL.md` after this file, then follow its
+referenced `references/spec-package-template.md`.
+
 ## Research Pipeline
 
 Execute the seven steps below in order for every opportunity. Each step has its
@@ -73,6 +77,24 @@ ON CONFLICT(opportunity_id, step_key) DO UPDATE SET
 
 If a step cannot be completed, record it with `status = 'failed'` and explain
 why in `summary`, then stop the pipeline.
+
+## Build Spec / PRD Generation
+
+After AFP shows an opportunity as `researched`, AFP may launch a build-spec run
+for that same opportunity. This is a separate run type, not another research
+step.
+
+When launched for build-spec generation:
+
+1. Read `.skills/opportunity-to-buildspec/SKILL.md` and its reference template.
+2. Harvest the existing `opportunities/[uuid]/README.md`, `steps/` artifacts,
+   and evidence materials. Do not redo the seven-step research unless the skill
+   explicitly requires supplemental research for a spec gap.
+3. Write the PRD/spec package under `opportunities/[uuid]/spec/`.
+4. Keep all generated build-spec files inside the target opportunity directory.
+5. Do not create an app repo, promote the opportunity, or start implementation.
+6. Do not overwrite research step artifacts or change scoring rows except to
+   repair a clearly broken link discovered while building the spec.
 
 ## Evidence Materials
 
