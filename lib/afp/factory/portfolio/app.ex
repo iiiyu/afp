@@ -23,17 +23,6 @@ defmodule Afp.Factory.Portfolio.App do
     field :paused_reason, :string
     field :archived_at, :utc_datetime_usec
 
-    has_many :tickets, Afp.Factory.Work.Ticket
-    has_many :harness_packets, Afp.Factory.Work.HarnessPacket
-    has_many :codex_sessions, Afp.Factory.Sessions.CodexSession
-    has_many :evidence_packets, Afp.Factory.Evidence.EvidencePacket
-    has_many :release_targets, Afp.Factory.Releases.ReleaseTarget
-    has_many :metrics_snapshots, Afp.Factory.Metrics.MetricsSnapshot
-    has_many :repo_scans, Afp.Factory.Repositories.RepoScan
-    has_many :growth_experiments, Afp.Factory.Growth.GrowthExperiment
-    has_many :maintenance_obligations, Afp.Factory.Maintenance.MaintenanceObligation
-    has_many :promoted_demand_items, Afp.Factory.Demand.DemandItem, foreign_key: :promoted_app_id
-
     timestamps()
   end
 

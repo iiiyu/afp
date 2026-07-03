@@ -1,7 +1,7 @@
 # @input  - Codex app-server JSON-RPC launch parameters and stdio responses
 # @output - New Codex thread/turn launch result with final task metadata
 # @pos    - Transport adapter between demand launch requests and Codex app-server
-defmodule Afp.Factory.Demand.CodexAppClient do
+defmodule Afp.Factory.CodexAppClient do
   @moduledoc false
 
   require Logger

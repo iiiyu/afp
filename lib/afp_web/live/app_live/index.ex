@@ -5,7 +5,6 @@ defmodule AfpWeb.AppLive.Index do
   use AfpWeb, :live_view
 
   alias Afp.Factory
-  alias Afp.Factory.Dashboard
   alias Afp.Factory.Events
   alias Afp.Factory.Portfolio
   alias Afp.Factory.Portfolio.App
@@ -57,12 +56,7 @@ defmodule AfpWeb.AppLive.Index do
   end
 
   defp load_apps(socket, filters) do
-    apps = Portfolio.list_apps(filters)
-
-    socket
-    |> assign(:apps, apps)
-    |> assign(:ticket_counts, Map.new(apps, &{&1.id, Dashboard.active_ticket_count(&1.id)}))
-    |> assign(:session_counts, Map.new(apps, &{&1.id, Dashboard.active_session_count(&1.id)}))
+    assign(socket, :apps, Portfolio.list_apps(filters))
   end
 
   defp filters_from_params(params) do
@@ -190,7 +184,6 @@ defmodule AfpWeb.AppLive.Index do
                       <th class="px-2 py-2">Health</th>
                       <th class="px-2 py-2">Platform</th>
                       <th class="px-2 py-2">Next action</th>
-                      <th class="px-2 py-2">Work</th>
                       <th class="px-2 py-2">Last activity</th>
                     </tr>
                   </thead>
@@ -215,9 +208,6 @@ defmodule AfpWeb.AppLive.Index do
                       </td>
                       <td class="max-w-80 px-2 py-2 text-slate-600 dark:text-slate-300">
                         {app.next_action || "Missing next action"}
-                      </td>
-                      <td class="px-2 py-2 text-xs text-slate-500">
-                        {@ticket_counts[app.id]} tickets · {@session_counts[app.id]} sessions
                       </td>
                       <td class="px-2 py-2 text-xs text-slate-500">
                         {format_datetime(app.last_activity_at)}

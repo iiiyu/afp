@@ -5,7 +5,7 @@ defmodule Afp.Factory.AgentClient do
   @moduledoc """
   The contract a launch transport must satisfy to run one agent turn.
 
-  Two real adapters implement it — `Afp.Factory.Demand.CodexAppClient`
+  Two real adapters implement it — `Afp.Factory.CodexAppClient`
   (Codex app-server JSON-RPC) and `Afp.Factory.Opportunities.ClaudeCodeClient`
   (headless `claude -p` stream-json) — and the test fakes implement the same
   contract, so launches are testable without spawning a CLI.

@@ -17,25 +17,11 @@ defmodule AfpWeb.Router do
   scope "/", AfpWeb do
     pipe_through :browser
 
-    live "/", TodayLive
-    live "/today", TodayLive
+    live "/", OpportunitiesLive
     live "/opportunities", OpportunitiesLive
     live "/opportunities/:id", OpportunitiesLive
-    live "/demand", DemandLive
     live "/apps", AppLive.Index
     live "/apps/:id", AppLive.Show
-    live "/board", BoardLive
-    live "/sessions", SessionsLive
-    live "/releases", ReleasesLive
-    live "/evidence", EvidenceLive
-    live "/metrics", MetricsLive
-    live "/settings", SettingsLive
-  end
-
-  scope "/api", AfpWeb do
-    pipe_through :api
-
-    post "/codex/hooks", CodexHookController, :create
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

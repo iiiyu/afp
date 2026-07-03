@@ -12,8 +12,8 @@ defmodule Afp.Application do
       Afp.Repo,
       {Oban, Application.fetch_env!(:afp, Oban)},
       Supervisor.child_spec(
-        {Task.Supervisor, name: Afp.Factory.Demand.CodexLaunchSupervisor},
-        id: Afp.Factory.Demand.CodexLaunchSupervisor
+        {Task.Supervisor, name: Afp.Factory.AgentLaunchSupervisor},
+        id: Afp.Factory.AgentLaunchSupervisor
       ),
       {DNSCluster, query: Application.get_env(:afp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Afp.PubSub},

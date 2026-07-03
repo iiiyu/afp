@@ -43,6 +43,14 @@ defmodule Afp.Factory.Events do
     |> Repo.all()
   end
 
+  def list_subject_events(subject_type, subject_id, limit \\ 50) do
+    Event
+    |> where([event], event.subject_type == ^subject_type and event.subject_id == ^subject_id)
+    |> order_by([event], desc: event.inserted_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
   def record_event(subject_type, subject_id, event_type, payload \\ %{}) do
     attrs = %{
       subject_type: subject_type,

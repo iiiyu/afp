@@ -6,7 +6,7 @@ defmodule Afp.Factory.CodexAppClientTest do
 
   import Afp.FactoryFixtures
 
-  alias Afp.Factory.Demand.CodexAppClient
+  alias Afp.Factory.CodexAppClient
 
   test "launch_new_turn answers app-server approval requests before awaiting completion" do
     cwd = unique_repo_path()

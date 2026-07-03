@@ -6,7 +6,6 @@ defmodule Afp.Factory.Portfolio do
 
   alias Afp.Factory
   alias Afp.Factory.Events
-  alias Afp.Factory.Evidence
   alias Afp.Factory.Portfolio.App
   alias Afp.Repo
 
@@ -35,18 +34,11 @@ defmodule Afp.Factory.Portfolio do
   end
 
   def get_app!(id) do
-    App
-    |> Repo.get!(id)
-    |> preload_app()
+    Repo.get!(App, id)
   end
 
   def get_app(id) when is_binary(id) do
-    App
-    |> Repo.get(id)
-    |> case do
-      nil -> nil
-      app -> preload_app(app)
-    end
+    Repo.get(App, id)
   end
 
   def get_app(_id), do: nil
@@ -98,7 +90,7 @@ defmodule Afp.Factory.Portfolio do
           |> maybe_pause_or_archive(lifecycle_stage, note)
 
         with {:ok, app} <- update_app(app, update_attrs) do
-          maybe_create_decision_evidence(app, "lifecycle", note, attrs)
+          _ = attrs
 
           Events.record_event("app", app.id, "lifecycle_transitioned", %{
             to: lifecycle_stage,
@@ -124,7 +116,7 @@ defmodule Afp.Factory.Portfolio do
 
       true ->
         with {:ok, app} <- update_app(app, %{"business_posture" => business_posture}) do
-          maybe_create_decision_evidence(app, "business_posture", note, attrs)
+          _ = attrs
 
           Events.record_event("app", app.id, "business_posture_changed", %{
             to: business_posture,
@@ -183,38 +175,6 @@ defmodule Afp.Factory.Portfolio do
     |> Enum.find(&Factory.repo_path_matches?(&1.repo_path, cwd))
   end
 
-  def preload_app(%App{} = app) do
-    Repo.preload(app,
-      tickets: from(ticket in Afp.Factory.Work.Ticket, order_by: [desc: ticket.updated_at]),
-      harness_packets:
-        from(packet in Afp.Factory.Work.HarnessPacket, order_by: [desc: packet.updated_at]),
-      codex_sessions:
-        from(session in Afp.Factory.Sessions.CodexSession, order_by: [desc: session.last_seen_at]),
-      evidence_packets:
-        from(evidence in Afp.Factory.Evidence.EvidencePacket,
-          order_by: [desc: evidence.inserted_at]
-        ),
-      release_targets:
-        from(release in Afp.Factory.Releases.ReleaseTarget, order_by: [desc: release.updated_at]),
-      metrics_snapshots:
-        from(snapshot in Afp.Factory.Metrics.MetricsSnapshot,
-          order_by: [desc: snapshot.snapshot_date]
-        ),
-      repo_scans:
-        from(scan in Afp.Factory.Repositories.RepoScan, order_by: [desc: scan.scanned_at]),
-      growth_experiments:
-        from(experiment in Afp.Factory.Growth.GrowthExperiment,
-          order_by: [asc_nulls_last: experiment.review_due_on, desc: experiment.updated_at]
-        ),
-      maintenance_obligations:
-        from(obligation in Afp.Factory.Maintenance.MaintenanceObligation,
-          order_by: [asc_nulls_last: obligation.due_on, desc: obligation.updated_at]
-        ),
-      promoted_demand_items:
-        from(demand in Afp.Factory.Demand.DemandItem, order_by: [desc: demand.promoted_at])
-    )
-  end
-
   defp after_write({:ok, %App{} = app}, event_type) do
     Events.record_event("app", app.id, event_type, %{
       name: app.name,
@@ -233,35 +193,6 @@ defmodule Afp.Factory.Portfolio do
     do: Map.put(attrs, "archived_at", Factory.now())
 
   defp maybe_pause_or_archive(attrs, _stage, _note), do: attrs
-
-  defp maybe_create_decision_evidence(app, decision_type, note, attrs) do
-    summary = Map.get(attrs, "evidence_summary") || Map.get(attrs, :evidence_summary)
-
-    if Factory.present?(summary) do
-      {:ok, packet, _links} =
-        Evidence.create_evidence_packet(
-          %{
-            "app_id" => app.id,
-            "type" => "review_note",
-            "title" => "#{Factory.labelize(decision_type)} decision evidence",
-            "summary" => summary,
-            "reliability" => "medium",
-            "payload" => %{"decision_note" => note}
-          },
-          [
-            %{
-              "subject_type" => "app",
-              "subject_id" => app.id,
-              "link_reason" => "#{Factory.labelize(decision_type)} transition evidence"
-            }
-          ]
-        )
-
-      packet
-    else
-      nil
-    end
-  end
 
   defp maybe_exclude_archived(query, params) do
     if truthy?(filter_value(params, "include_archived")) do

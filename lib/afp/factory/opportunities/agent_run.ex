@@ -13,7 +13,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   require Logger
 
   alias Afp.Factory
-  alias Afp.Factory.Demand.CodexAppClient
+  alias Afp.Factory.CodexAppClient
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities
   alias Afp.Factory.Opportunities.ClaudeCodeClient
@@ -21,7 +21,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   alias Afp.Factory.Opportunities.Storage
 
   @default_agent "claude_code"
-  @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
+  @codex_launch_supervisor Afp.Factory.AgentLaunchSupervisor
   @base_sqlite_path "base.sqlite"
   @opportunities_path "opportunities"
   @skills_path ".skills"

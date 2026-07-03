@@ -39,7 +39,7 @@ defmodule AfpWeb.Layouts do
       <aside class="sticky top-0 z-40 hidden h-screen flex-col border-r border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:flex">
         <div class="flex min-h-16 items-center border-b border-slate-100 px-3 dark:border-slate-900 lg:px-4">
           <.link
-            navigate={~p"/today"}
+            navigate={~p"/opportunities"}
             class="flex min-w-0 items-center gap-3 text-sm font-semibold"
             title="App Factory"
           >
@@ -52,19 +52,12 @@ defmodule AfpWeb.Layouts do
 
         <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-4 lg:px-3">
           <nav class="flex flex-col gap-1 text-sm">
-            <.nav_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
             <.nav_item
               navigate={~p"/opportunities"}
               icon="hero-magnifying-glass"
               label="Opportunities"
             />
             <.nav_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
-            <.nav_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
-            <.nav_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
-            <.nav_item navigate={~p"/releases"} icon="hero-rocket-launch" label="Releases" />
-            <.nav_item navigate={~p"/evidence"} icon="hero-shield-check" label="Evidence" />
-            <.nav_item navigate={~p"/metrics"} icon="hero-chart-bar" label="Metrics" />
-            <.nav_item navigate={~p"/settings"} icon="hero-cog-6-tooth" label="Settings" />
           </nav>
         </div>
 
@@ -81,19 +74,12 @@ defmodule AfpWeb.Layouts do
 
       <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 lg:hidden">
         <div class="flex items-center justify-between gap-1">
-          <.nav_icon_item navigate={~p"/today"} icon="hero-bolt" label="Today" />
           <.nav_icon_item
             navigate={~p"/opportunities"}
             icon="hero-magnifying-glass"
             label="Opportunities"
           />
           <.nav_icon_item navigate={~p"/apps"} icon="hero-rectangle-stack" label="Apps" />
-          <.nav_icon_item navigate={~p"/board"} icon="hero-view-columns" label="Board" />
-          <.nav_icon_item navigate={~p"/sessions"} icon="hero-command-line" label="Sessions" />
-          <.nav_icon_item navigate={~p"/releases"} icon="hero-rocket-launch" label="Releases" />
-          <.nav_icon_item navigate={~p"/evidence"} icon="hero-shield-check" label="Evidence" />
-          <.nav_icon_item navigate={~p"/metrics"} icon="hero-chart-bar" label="Metrics" />
-          <.nav_icon_item navigate={~p"/settings"} icon="hero-cog-6-tooth" label="Settings" />
         </div>
       </nav>
 

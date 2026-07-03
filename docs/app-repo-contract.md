@@ -118,26 +118,11 @@ only `.example` is committed).
 
 ## AFP Integration Status
 
-Implemented (BuildRunner v0, `Afp.Factory.Builds`):
-
-- `Builds.inspect_app_repo/1` — manifest reading + health verdict
-  (`Factory.app_repo_health_states/0`); only `healthy` repos launch.
-- `Builds.launch_packet/2` — takes a `ready` harness packet with a
-  `repository_path`, records a `build_runs` row, marks the packet
-  `launched`/`supervised`, runs the agent turn via the `Factory.AgentClient`
-  behaviour (Codex or Claude Code, supervised under `CodexLaunchSupervisor`,
-  `:build_launch_mode` sync/async), then executes `verify.entrypoint` via an
-  Elixir Port (`Builds.VerifyRunner`), parses `verify.json`, ingests it as an
-  evidence packet linked to the harness packet and ticket, and moves the
-  packet to `review`.
-- Board UI: a "Run agent" button on ready packets with a repository path.
-
-Not yet implemented (next slices):
-
-1. Settings registration of the app-template repo path + "new app from
-   template" deterministic clone-and-scaffold action.
-2. Live run activity display and a build-runs surface in the UI.
-3. Stale-run reconciliation for build runs (mirror
-   `reconcile_stale_running_research_runs`).
-4. `afp/reports/*` per-milestone ingestion (today only `verify.json` lands as
-   evidence).
+Not currently implemented. A working BuildRunner v0 (`Afp.Factory.Builds`:
+manifest health preflight, packet launch through the `Factory.AgentClient`
+behaviour, verify execution via an Elixir Port, evidence ingestion) shipped
+on 2026-07-03 and was validated end-to-end against LumaSpark — including one
+real supervised agent run — then removed in the core refactor that reduced
+AFP to the Opportunities + Apps surfaces. See git history (commits `5ccbdce`,
+`a22c1c6`) for the implementation; the rebuild should launch from the Apps
+surface rather than from harness packets.
