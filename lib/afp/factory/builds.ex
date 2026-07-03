@@ -258,6 +258,14 @@ defmodule Afp.Factory.Builds do
     summaries, not raw logs. Record milestone results in the repo state db
     per the AGENTS.md recording contract.
 
+    You have exactly one turn. Run every command — especially the verify
+    chain — in the foreground and wait for it to finish; never launch
+    background work and end your turn expecting to resume, because nothing
+    resumes. A follow-up verify runs after your turn on the same machine,
+    so leaving processes running will corrupt it. Commit only after the
+    oracle reports pass; if you cannot reach pass, leave the work
+    uncommitted and say exactly what is red and why.
+
     #{Work.handoff_text(packet)}
     """
     |> String.trim()
