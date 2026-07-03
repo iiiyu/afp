@@ -66,7 +66,7 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert detail_html =~ "Files"
     assert detail_html =~ "README.md"
     assert detail_html =~ "Receipt packet for restaurant shift disputes"
-    assert detail_html =~ "Fake Codex completed"
+    assert detail_html =~ "Fake agent completed"
     assert has_element?(detail_view, "#generate-build-spec-#{opportunity.id}")
   end
 
@@ -105,7 +105,7 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert detail_html =~ "Agent Session"
     assert detail_html =~ "Claude Code"
     assert detail_html =~ "claude-opus-4-8"
-    assert detail_html =~ "Fake Claude Code completed"
+    assert detail_html =~ "Fake agent completed"
 
     assert detail_html =~ "Research Steps"
     assert detail_html =~ "Competitor Discovery"

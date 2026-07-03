@@ -8,6 +8,8 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
 
   @behaviour Afp.Factory.AgentClient
 
+  alias Afp.Factory.AgentClient
+
   @safe_read_commands ~w(cat date find head ls pwd rg sed tail wc)
   @denied_bash_patterns [
     "rm *",
@@ -36,8 +38,9 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
           buffer: "",
           events: [],
           init_event: nil,
-          thread_response: nil,
-          turn_response: nil,
+          session_id: nil,
+          turn_id: nil,
+          transcript_path: nil,
           launch_event_handler: Keyword.get(opts, :on_launch_event)
         }
 
@@ -49,11 +52,15 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
           end
 
         log_launch_result(result)
-        result
+
+        case result do
+          {:ok, launch_result} -> {:ok, launch_result}
+          {:error, reason} -> {:error, AgentClient.Error.wrap(reason)}
+        end
 
       {:error, reason} ->
         log_transport("launch_error", %{"reason" => inspect(reason)})
-        {:error, reason}
+        {:error, AgentClient.Error.wrap(reason)}
     end
   end
 
@@ -187,36 +194,21 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
       init_event ->
         session_id = init_event["session_id"]
 
-        thread_response = %{
-          "result" => %{
-            "thread" => %{
-              "id" => session_id,
-              "sessionId" => session_id,
-              "cwd" => cwd,
-              "path" => transcript_path(cwd, session_id)
-            },
-            "model" => init_event["model"]
-          }
-        }
-
-        turn_response = %{
-          "result" => %{
-            "turn" => %{
-              "id" => init_event["uuid"] || session_id,
-              "status" => "inProgress"
-            }
-          }
-        }
-
         conn = %{
           conn
           | init_event: init_event,
-            thread_response: thread_response,
-            turn_response: turn_response
+            session_id: session_id,
+            turn_id: init_event["uuid"] || session_id,
+            transcript_path: transcript_path(cwd, session_id)
         }
 
-        with {:ok, conn} <- notify_launch_event(conn, :thread_started, thread_response) do
-          notify_launch_event(conn, :turn_started, turn_response)
+        with {:ok, conn} <-
+               notify_launch_event(conn, :thread_started, %{
+                 session_id: session_id,
+                 thread_id: session_id,
+                 transcript_path: conn.transcript_path
+               }) do
+          notify_launch_event(conn, :turn_started, %{turn_id: conn.turn_id})
         end
     end
   end
@@ -234,24 +226,20 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
      {:claude_run_failed, result_event["result"] || "Claude Code run failed", diagnostics(conn)}}
   end
 
-  defp finalize(%{thread_response: nil} = conn, _result_event) do
+  defp finalize(%{session_id: nil} = conn, _result_event) do
     {:error, {:claude_session_missing, diagnostics(conn)}}
   end
 
   defp finalize(conn, result_event) do
-    turn_id = get_in(conn.turn_response, ["result", "turn", "id"])
-
     {:ok,
-     %{
-       initialize_response: conn.init_event,
-       thread_response: conn.thread_response,
-       turn_response: conn.turn_response,
-       turn_completed: %{
-         "method" => "turn/completed",
-         "params" => %{"turn" => %{"id" => turn_id, "status" => "completed"}}
-       },
-       notifications: conn.events,
-       final_answer: result_event["result"]
+     %AgentClient.Result{
+       session_id: conn.session_id,
+       thread_id: conn.session_id,
+       turn_id: conn.turn_id,
+       turn_status: "completed",
+       transcript_path: conn.transcript_path,
+       final_answer: result_event["result"],
+       raw: %{initialize_response: conn.init_event, notifications: conn.events}
      }}
   end
 
@@ -323,7 +311,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
     # verify scripts) pass additional command patterns; deny rules still win.
     extra_rules =
       attrs
-      |> Map.get(:extra_bash_allow, [])
+      |> Map.get(:extra_command_allow, [])
       |> Enum.map(&"Bash(#{&1})")
 
     ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"] ++
@@ -390,7 +378,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
   defp diagnostics(conn) do
     %{
       "event_count" => length(conn.events),
-      "session_id" => get_in(conn.thread_response, ["result", "thread", "sessionId"]),
+      "session_id" => conn.session_id,
       "last_events" => conn.events |> Enum.take(-3) |> Enum.map(&event_summary/1)
     }
   end
@@ -415,8 +403,8 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
 
   defp log_launch_result({:ok, result}) do
     log_transport("launch_completed", %{
-      "event_count" => length(Map.get(result, :notifications, [])),
-      "session_id" => get_in(result, [:thread_response, "result", "thread", "sessionId"])
+      "event_count" => length(Map.get(result.raw, :notifications, [])),
+      "session_id" => result.session_id
     })
   end
 

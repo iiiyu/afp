@@ -41,11 +41,11 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
     assert "fake-model" in cli_args
 
     assert result.final_answer == "Research complete."
-    assert get_in(result.thread_response, ["result", "thread", "sessionId"]) == "sess-1"
-    assert get_in(result.turn_completed, ["params", "turn", "status"]) == "completed"
+    assert result.session_id == "sess-1"
+    assert result.turn_status == "completed"
 
     assert_received {:launch_event, :thread_started, thread_payload}
-    assert get_in(thread_payload, ["result", "thread", "id"]) == "sess-1"
+    assert thread_payload.session_id == "sess-1"
     assert_received {:launch_event, :turn_started, _turn_payload}
     assert_received {:launch_event, :activity, %{"kind" => "tool", "text" => "Bash: pwd"}}
     assert_received {:launch_event, :activity, %{"kind" => "tool_error", "text" => "denied"}}
@@ -61,7 +61,8 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
       {"type":"result","subtype":"error_during_execution","is_error":true,"result":"Something broke"}
       """)
 
-    assert {:error, {:claude_run_failed, "Something broke", _diagnostics}} =
+    assert {:error,
+            %Afp.Factory.AgentClient.Error{reason: :claude_run_failed, detail: "Something broke"}} =
              ClaudeCodeClient.launch_new_turn(
                %{cwd: dir, input_text: "do research"},
                claude_executable: script,
@@ -69,7 +70,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
              )
   end
 
-  test "launch_new_turn merges extra_bash_allow into permission settings" do
+  test "launch_new_turn merges extra_command_allow into permission settings" do
     dir = stub_dir()
 
     script =
@@ -83,7 +84,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
                %{
                  cwd: dir,
                  input_text: "build milestone",
-                 extra_bash_allow: ["xcodebuild *", "sh Scripts/*"]
+                 extra_command_allow: ["xcodebuild *", "sh Scripts/*"]
                },
                claude_executable: script,
                timeout_ms: 10_000

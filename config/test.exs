@@ -30,8 +30,8 @@ config :swoosh, :api_client, false
 config :logger, level: :warning
 
 config :afp, Oban, testing: :manual
-config :afp, :codex_app_client, Afp.Factory.FakeCodexAppClient
-config :afp, :claude_code_client, Afp.Factory.Opportunities.FakeClaudeCodeClient
+config :afp, :codex_app_client, Afp.Factory.FakeAgentClient
+config :afp, :claude_code_client, Afp.Factory.FakeAgentClient
 config :afp, :codex_launch_mode, :sync
 config :afp, :build_launch_mode, :sync
 

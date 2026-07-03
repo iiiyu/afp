@@ -13,6 +13,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   require Logger
 
   alias Afp.Factory
+  alias Afp.Factory.AgentClient
   alias Afp.Factory.CodexAppClient
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities
@@ -58,7 +59,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
     agent = run.agent || @default_agent
     persist_agent_run_started(repo, opportunity.id, run.id, agent)
 
-    attrs = agent_launch_attrs(repo, opportunity, run)
+    request = agent_launch_request(repo, run)
 
     opts =
       opts
@@ -67,7 +68,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
         persist_agent_progress(repo, opportunity.id, run.id, agent, event, payload)
       end)
 
-    case launch_client(agent).launch_new_turn(attrs, opts) do
+    case launch_client(agent).launch_new_turn(request, opts) do
       {:ok, launch_result} ->
         persist_agent_success(repo, opportunity.id, run, agent, launch_result)
 
@@ -146,9 +147,6 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp persist_agent_progress(repo, opportunity_id, run_id, agent, :thread_started, payload) do
-    thread = get_in(payload, ["result", "thread"]) || %{}
-    session_id = thread["sessionId"] || thread["id"]
-
     :ok =
       Storage.mark_thread_started(
         repo,
@@ -156,24 +154,22 @@ defmodule Afp.Factory.Opportunities.AgentRun do
           opportunity_id: opportunity_id,
           run_id: run_id,
           stage: "#{Opportunities.agent_label(agent)} session started",
-          session_id: session_id,
-          thread_id: thread["id"],
-          transcript_path: thread["path"]
+          session_id: payload.session_id,
+          thread_id: payload.thread_id,
+          transcript_path: payload.transcript_path
         }
       )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_thread_started", %{
       opportunity_id: opportunity_id,
       agent: agent,
-      codex_session_id: session_id
+      agent_session_id: payload.session_id
     })
 
     :ok
   end
 
   defp persist_agent_progress(repo, opportunity_id, run_id, agent, :turn_started, payload) do
-    turn = get_in(payload, ["result", "turn"]) || %{}
-
     :ok =
       Storage.mark_turn_started(
         repo,
@@ -181,14 +177,14 @@ defmodule Afp.Factory.Opportunities.AgentRun do
           opportunity_id: opportunity_id,
           run_id: run_id,
           stage: "#{Opportunities.agent_label(agent)} turn started",
-          turn_id: turn["id"]
+          turn_id: payload.turn_id
         }
       )
 
     Events.record_event("opportunity_run", run_id, "opportunity_run_turn_started", %{
       opportunity_id: opportunity_id,
       agent: agent,
-      codex_turn_id: turn["id"]
+      agent_turn_id: payload.turn_id
     })
 
     :ok
@@ -202,16 +198,11 @@ defmodule Afp.Factory.Opportunities.AgentRun do
 
   defp persist_agent_progress(_repo, _opportunity_id, _run_id, _agent, _event, _payload), do: :ok
 
-  defp persist_agent_success(repo, opportunity_id, run, agent, launch_result) do
+  defp persist_agent_success(repo, opportunity_id, run, agent, result) do
     run_id = run.id
     run_type = run.run_type || "initial_research"
     now = now_iso()
-    thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
-    turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
-    completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
-    session_id = thread["sessionId"] || thread["id"]
-    final_answer = Map.get(launch_result, :final_answer)
-    payload_json = Jason.encode!(agent_payload(agent, run.model, launch_result, now))
+    payload_json = Jason.encode!(agent_payload(agent, run.model, result, now))
 
     with :ok <- Files.refresh_index(repo, opportunity_id),
          :ok <-
@@ -222,21 +213,21 @@ defmodule Afp.Factory.Opportunities.AgentRun do
                run_id: run_id,
                stage: completion_stage(run_type, agent),
                opportunity_status: completion_status(run_type),
-               session_id: session_id,
-               thread_id: thread["id"],
-               turn_id: turn["id"] || completed_turn["id"],
-               transcript_path: thread["path"],
-               final_answer: final_answer,
+               session_id: result.session_id,
+               thread_id: result.thread_id,
+               turn_id: result.turn_id,
+               transcript_path: result.transcript_path,
+               final_answer: result.final_answer,
                payload_json: payload_json
              }
            ) do
       Events.record_event("opportunity_run", run_id, "opportunity_run_completed", %{
         opportunity_id: opportunity_id,
         agent: agent,
-        codex_session_id: session_id
+        agent_session_id: result.session_id
       })
 
-      {:ok, %{run: fetch_run!(opportunity_id, run_id), codex_result: launch_result}}
+      {:ok, %{run: fetch_run!(opportunity_id, run_id), result: result}}
     end
   end
 
@@ -288,18 +279,14 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   defp failure_status("build_spec"), do: "researched"
   defp failure_status(_run_type), do: "failed"
 
-  defp agent_launch_attrs(repo, opportunity, run) do
+  defp agent_launch_request(repo, run) do
     repo_path = repo["repo_path"]
 
-    %{
+    %AgentClient.Request{
       cwd: repo_path,
       input_text: run.prompt,
       model: run.model,
-      opportunity_id: opportunity.id,
-      opportunity_run_id: run.id,
       client_user_message_id: run.id,
-      approval_policy: "on-request",
-      sandbox_mode: "workspace-write",
       source_repo_root: repo_path,
       write_targets: %{
         "opportunities" => @opportunities_path,
@@ -315,36 +302,21 @@ defmodule Afp.Factory.Opportunities.AgentRun do
         "link_file",
         "upsert_candidate"
       ],
-      network_access: true,
-      sandbox_policy: %{
-        "type" => "workspaceWrite",
-        "writableRoots" => [
-          Path.join(repo_path, @opportunities_path),
-          Path.join(repo_path, @base_sqlite_path),
-          Path.join(repo_path, @skills_path)
-        ],
-        "networkAccess" => true,
-        "excludeTmpdirEnvVar" => false,
-        "excludeSlashTmp" => false
-      }
+      network_access: true
     }
   end
 
-  defp agent_payload(agent, model, launch_result, now) do
-    thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
-    turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
-    completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
-
+  defp agent_payload(agent, model, result, now) do
     %{
       "agent" => agent,
       "model" => model,
       "launch_status" => "completed",
-      "session_id" => thread["sessionId"] || thread["id"],
-      "thread_id" => thread["id"],
-      "turn_id" => turn["id"] || completed_turn["id"],
-      "turn_status" => completed_turn["status"],
-      "transcript_path" => thread["path"],
-      "final_answer" => Map.get(launch_result, :final_answer),
+      "session_id" => result.session_id,
+      "thread_id" => result.thread_id,
+      "turn_id" => result.turn_id,
+      "turn_status" => result.turn_status,
+      "transcript_path" => result.transcript_path,
+      "final_answer" => result.final_answer,
       "completed_at" => now
     }
   end

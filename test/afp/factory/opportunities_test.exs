@@ -84,7 +84,7 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert opportunity.status == "researched"
     assert opportunity.stage == "Initial Codex research completed"
     assert opportunity.agent_session_id =~ "fake-session-"
-    assert opportunity.latest_summary =~ "Fake Codex completed"
+    assert opportunity.latest_summary =~ "Fake agent completed"
 
     opportunity_root = Path.join([path, "opportunities", opportunity.id])
     assert File.regular?(Path.join(opportunity_root, "README.md"))
@@ -139,13 +139,13 @@ defmodule Afp.Factory.OpportunitiesTest do
     assert_received {:opportunity_run_activity,
                      %{activity: %{"kind" => "message", "text" => text}}}
 
-    assert text =~ "Fake Claude Code analyzing"
+    assert text =~ "Fake agent analyzing"
 
     assert opportunity.agent == "claude_code"
     assert opportunity.status == "researched"
     assert opportunity.stage == "Initial Claude Code research completed"
-    assert opportunity.agent_session_id =~ "fake-claude-session-"
-    assert opportunity.latest_summary =~ "Fake Claude Code completed"
+    assert opportunity.agent_session_id =~ "fake-session-"
+    assert opportunity.latest_summary =~ "Fake agent completed"
 
     assert [run] = Opportunities.list_runs(opportunity.id)
     assert run.agent == "claude_code"

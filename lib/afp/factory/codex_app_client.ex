@@ -6,6 +6,8 @@ defmodule Afp.Factory.CodexAppClient do
 
   require Logger
 
+  alias Afp.Factory.AgentClient
+
   @behaviour Afp.Factory.AgentClient
 
   @client_info %{
@@ -69,18 +71,29 @@ defmodule Afp.Factory.CodexAppClient do
                    start_turn(conn, attrs, thread_response, timeout_ms),
                  {:ok, conn, turn_completed} <-
                    await_turn_completed(conn, turn_id(turn_response), timeout_ms) do
+              thread = get_in(thread_response, ["result", "thread"]) || %{}
+              turn = get_in(turn_response, ["result", "turn"]) || %{}
+              completed_turn = get_in(turn_completed, ["params", "turn"]) || %{}
+
               {:ok,
-               %{
-                 initialize_response: initialize_response,
-                 thread_response: thread_response,
-                 turn_response: turn_response,
-                 turn_completed: turn_completed,
-                 notifications: conn.events,
-                 server_request_responses: conn.server_request_responses,
-                 final_answer: final_answer(conn.events)
+               %AgentClient.Result{
+                 session_id: thread["sessionId"] || thread["id"],
+                 thread_id: thread["id"],
+                 turn_id: completed_turn["id"] || turn["id"],
+                 turn_status: completed_turn["status"],
+                 transcript_path: thread["path"],
+                 final_answer: final_answer(conn.events),
+                 raw: %{
+                   initialize_response: initialize_response,
+                   thread_response: thread_response,
+                   turn_response: turn_response,
+                   turn_completed: turn_completed,
+                   notifications: conn.events,
+                   server_request_responses: conn.server_request_responses
+                 }
                }}
             else
-              {:error, reason} -> {:error, reason}
+              {:error, reason} -> {:error, AgentClient.Error.wrap(reason)}
             end
           after
             close_port(port)
@@ -91,7 +104,7 @@ defmodule Afp.Factory.CodexAppClient do
 
       {:error, reason} ->
         log_transport("launch_error", %{"reason" => inspect(reason)})
-        {:error, reason}
+        {:error, AgentClient.Error.wrap(reason)}
     end
   end
 
@@ -113,10 +126,10 @@ defmodule Afp.Factory.CodexAppClient do
 
   defp log_launch_result({:ok, result}) do
     log_transport("launch_completed", %{
-      "event_count" => length(Map.get(result, :notifications, [])),
-      "server_request_count" => length(Map.get(result, :server_request_responses, [])),
-      "turn_id" => get_in(result, [:turn_response, "result", "turn", "id"]),
-      "turn_status" => get_in(result, [:turn_completed, "params", "turn", "status"])
+      "event_count" => length(Map.get(result.raw, :notifications, [])),
+      "server_request_count" => length(Map.get(result.raw, :server_request_responses, [])),
+      "turn_id" => result.turn_id,
+      "turn_status" => result.turn_status
     })
   end
 
@@ -177,9 +190,25 @@ defmodule Afp.Factory.CodexAppClient do
 
     with :ok <- send_message(conn.port, request),
          {:ok, conn, response} <- receive_response(conn, @thread_start_request_id, timeout_ms),
-         {:ok, conn} <- notify_launch_event(conn, :thread_started, response) do
+         {:ok, conn} <-
+           notify_launch_event(conn, :thread_started, thread_started_payload(response)) do
       {:ok, conn, response}
     end
+  end
+
+  defp thread_started_payload(response) do
+    thread = get_in(response, ["result", "thread"]) || %{}
+
+    %{
+      session_id: thread["sessionId"] || thread["id"],
+      thread_id: thread["id"],
+      transcript_path: thread["path"]
+    }
+  end
+
+  defp turn_started_payload(response) do
+    turn = get_in(response, ["result", "turn"]) || %{}
+    %{turn_id: turn["id"]}
   end
 
   defp start_turn(conn, attrs, thread_response, timeout_ms) do
@@ -201,7 +230,7 @@ defmodule Afp.Factory.CodexAppClient do
 
     with :ok <- send_message(conn.port, request),
          {:ok, conn, response} <- receive_response(conn, @turn_start_request_id, timeout_ms),
-         {:ok, conn} <- notify_launch_event(conn, :turn_started, response) do
+         {:ok, conn} <- notify_launch_event(conn, :turn_started, turn_started_payload(response)) do
       {:ok, conn, response}
     end
   end
@@ -1101,15 +1130,32 @@ defmodule Afp.Factory.CodexAppClient do
 
   defp turn_id(%{"result" => %{"turn" => %{"id" => id}}}), do: id
 
+  # Transport rendering of the neutral request bounds: writable roots derive
+  # from write_targets relative to the repo root. Callers never build this map.
   defp sandbox_policy(cwd, attrs) do
     Map.get(attrs, :sandbox_policy) ||
       %{
         "type" => "workspaceWrite",
-        "writableRoots" => [cwd],
+        "writableRoots" => writable_roots(cwd, attrs),
         "networkAccess" => Map.get(attrs, :network_access, true),
         "excludeTmpdirEnvVar" => false,
         "excludeSlashTmp" => false
       }
+  end
+
+  defp writable_roots(cwd, attrs) do
+    root = Map.get(attrs, :source_repo_root) || cwd
+
+    case Map.get(attrs, :write_targets) do
+      targets when is_map(targets) and map_size(targets) > 0 ->
+        targets
+        |> Map.values()
+        |> Enum.sort()
+        |> Enum.map(&Path.join(root, &1))
+
+      _targets ->
+        [cwd]
+    end
   end
 
   defp thread_source(attrs) do

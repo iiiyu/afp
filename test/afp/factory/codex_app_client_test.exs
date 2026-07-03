@@ -24,7 +24,8 @@ defmodule Afp.Factory.CodexAppClientTest do
              )
 
     assert result.final_answer == "Fake app-server completed."
-    assert get_in(result.turn_completed, ["params", "turn", "status"]) == "completed"
+    assert result.turn_status == "completed"
+    assert result.session_id == "session-1"
 
     assert [
              %{
@@ -34,7 +35,7 @@ defmodule Afp.Factory.CodexAppClientTest do
                  "reason" => "Command is not recognized as safe or manifest-bounded."
                }
              }
-           ] = result.server_request_responses
+           ] = result.raw.server_request_responses
   end
 
   test "launch_new_turn reports thread and turn progress callbacks" do
@@ -59,10 +60,9 @@ defmodule Afp.Factory.CodexAppClientTest do
              )
 
     assert_receive {:codex_progress, :thread_started,
-                    %{"result" => %{"thread" => %{"id" => "thread-1"}}}}
+                    %{session_id: "session-1", thread_id: "thread-1"}}
 
-    assert_receive {:codex_progress, :turn_started,
-                    %{"result" => %{"turn" => %{"id" => "turn-1"}}}}
+    assert_receive {:codex_progress, :turn_started, %{turn_id: "turn-1"}}
   end
 
   test "launch_new_turn accepts file changes governed by the current sandbox" do
@@ -94,7 +94,7 @@ defmodule Afp.Factory.CodexAppClientTest do
                    "No extra grant root requested; turn sandbox and source repo contract apply."
                }
              }
-           ] = result.server_request_responses
+           ] = result.raw.server_request_responses
   end
 
   test "launch_new_turn declines file grant roots outside manifest write targets" do
@@ -127,7 +127,7 @@ defmodule Afp.Factory.CodexAppClientTest do
                  "reason" => "Requested grant root is outside manifest-declared write targets."
                }
              }
-           ] = result.server_request_responses
+           ] = result.raw.server_request_responses
   end
 
   test "launch_new_turn accepts network approvals for bounded research turns" do
@@ -161,7 +161,7 @@ defmodule Afp.Factory.CodexAppClientTest do
                  "reason" => "Network access is enabled for this bounded research turn."
                }
              }
-           ] = result.server_request_responses
+           ] = result.raw.server_request_responses
   end
 
   defp fake_codex_executable!(cwd, approval_requests \\ nil) do
