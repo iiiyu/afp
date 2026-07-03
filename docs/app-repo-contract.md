@@ -118,14 +118,26 @@ only `.example` is committed).
 
 ## AFP Integration Status
 
-Implemented in AFP today: nothing — this document is the target contract for
-BuildRunner v0 (Sprint C):
+Implemented (BuildRunner v0, `Afp.Factory.Builds`):
 
-1. Settings gains the app-template repo path + registered app repo paths.
-2. "New app from template" is a deterministic clone-and-scaffold action (not
-   agent work) that then launches the `scaffold-from-spec` skill.
-3. BuildRunner reuses the `Factory.AgentClient` behaviour to launch
-   `implement-milestone` runs in `repository_path` (launch_mode `supervised`
-   first), then executes `verify.entrypoint` via an Elixir Port, ingests
-   `verify.json` + `afp/reports/*` as evidence, and moves the ticket to
-   review.
+- `Builds.inspect_app_repo/1` — manifest reading + health verdict
+  (`Factory.app_repo_health_states/0`); only `healthy` repos launch.
+- `Builds.launch_packet/2` — takes a `ready` harness packet with a
+  `repository_path`, records a `build_runs` row, marks the packet
+  `launched`/`supervised`, runs the agent turn via the `Factory.AgentClient`
+  behaviour (Codex or Claude Code, supervised under `CodexLaunchSupervisor`,
+  `:build_launch_mode` sync/async), then executes `verify.entrypoint` via an
+  Elixir Port (`Builds.VerifyRunner`), parses `verify.json`, ingests it as an
+  evidence packet linked to the harness packet and ticket, and moves the
+  packet to `review`.
+- Board UI: a "Run agent" button on ready packets with a repository path.
+
+Not yet implemented (next slices):
+
+1. Settings registration of the app-template repo path + "new app from
+   template" deterministic clone-and-scaffold action.
+2. Live run activity display and a build-runs surface in the UI.
+3. Stale-run reconciliation for build runs (mirror
+   `reconcile_stale_running_research_runs`).
+4. `afp/reports/*` per-milestone ingestion (today only `verify.json` lands as
+   evidence).

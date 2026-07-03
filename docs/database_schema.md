@@ -29,6 +29,7 @@ states validated in Ecto, and jsonb for flexible packet/payload fields.
 - `repo_scans` - Local git scan snapshots with repository path, app match, scan status, branch, dirty counts, latest commit, platform hints, and scan errors.
 - `growth_experiments` - Manual post-launch growth experiments with hypothesis, metric, status, priority, review due date, and outcome note.
 - `maintenance_obligations` - Due operational work for live apps, including category, status, priority, due date, recurrence, notes, and completion timestamp.
+- `build_runs` - BuildRunner executions of harness packets against app repos: agent/model, prompt, status, agent payload (session/turn metadata), verify result JSON, error, timing, and links to app, harness packet, ticket, and the ingested evidence packet.
 - `events` - Append-only audit log for state changes, intake, and operator decisions.
 - `settings` - jsonb-backed local configuration, including repository roots, the configured opportunities repo path and latest health snapshot, Codex intake settings, transcript privacy, and JSONL spool offsets.
 - `oban_jobs` and related Oban database objects - Background job storage for retryable/local intake tasks.
@@ -109,7 +110,9 @@ validated in Ecto changesets:
 - Opportunity run status in `base.sqlite`: `queued`, `running`, `completed`, `failed`.
 - Opportunity step result status in `base.sqlite`: `pending`, `completed`, `failed`.
 - Codex launch request status: `draft`, `ready`, `launched`, `cancelled`.
-- Codex launch mode: `manual_handoff`, `direct_codex`.
+- Codex launch mode: `manual_handoff`, `direct_codex`, `supervised`.
+- Build run status: `queued`, `running`, `verifying`, `completed`, `failed`.
+- App repo health (BuildRunner preflight): `unknown`, `healthy`, `missing`, `agents_missing`, `manifest_missing`, `invalid_manifest`, `verify_missing`, `state_db_missing`, `state_db_invalid`.
 - Business posture: `unknown`, `grow`, `maintain`, `fix`, `harvest`, `pause`, `kill`.
 - App health: `unknown`, `healthy`, `needs_next_action`, `repo_missing`, `repo_dirty`, `blocked`, `release_blocked`, `review`, `metrics_stale`, `maintenance_due`, `growth_review`, `archived`.
 - Ticket status: `backlog`, `ready`, `active`, `review`, `blocked`, `done`, `dropped`.

@@ -5,6 +5,7 @@ defmodule AfpWeb.BoardLive do
   use AfpWeb, :live_view
 
   alias Afp.Factory
+  alias Afp.Factory.Builds
   alias Afp.Factory.Evidence
   alias Afp.Factory.Events
   alias Afp.Factory.Portfolio
@@ -76,6 +77,25 @@ defmodule AfpWeb.BoardLive do
 
       {:error, _changeset} ->
         {:noreply, put_flash(socket, :error, "Could not launch harness packet.")}
+    end
+  end
+
+  def handle_event("run_packet", %{"packet-id" => packet_id}, socket) do
+    packet = Work.get_harness_packet!(packet_id)
+
+    case Builds.launch_packet(packet) do
+      {:ok, _run} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "BuildRunner launched (supervised).")
+         |> load_board(socket.assigns.filters)}
+
+      {:error, {:repo_unhealthy, state, notes}} ->
+        {:noreply,
+         put_flash(socket, :error, "App repo unhealthy (#{state}): #{Enum.join(notes, "; ")}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not run packet: #{inspect(reason)}")}
     end
   end
 
@@ -389,14 +409,25 @@ defmodule AfpWeb.BoardLive do
                         {packet.app.name} · {packet.state} · {packet.risk_level}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      phx-click="launch_packet"
-                      phx-value-packet-id={packet.id}
-                      class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                    >
-                      Launch
-                    </button>
+                    <div class="flex shrink-0 gap-2">
+                      <button
+                        :if={packet.state == "ready" and Factory.present?(packet.repository_path)}
+                        type="button"
+                        phx-click="run_packet"
+                        phx-value-packet-id={packet.id}
+                        class="rounded border border-emerald-400 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                      >
+                        Run agent
+                      </button>
+                      <button
+                        type="button"
+                        phx-click="launch_packet"
+                        phx-value-packet-id={packet.id}
+                        class="rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                      >
+                        Launch
+                      </button>
+                    </div>
                   </div>
                   <.disclosure title="Handoff text" subtitle="Packet text for external execution.">
                     <textarea

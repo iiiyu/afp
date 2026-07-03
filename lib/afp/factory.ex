@@ -19,7 +19,9 @@ defmodule Afp.Factory do
   @demand_message_targets ~w(new_session existing_session manual_handoff)
   @demand_sent_message_statuses ~w(draft confirmed sent accepted failed superseded)
   @launch_request_statuses ~w(draft ready launched cancelled)
-  @launch_modes ~w(manual_handoff direct_codex)
+  @launch_modes ~w(manual_handoff direct_codex supervised)
+  @build_run_statuses ~w(queued running verifying completed failed)
+  @app_repo_health_states ~w(unknown healthy missing agents_missing manifest_missing invalid_manifest verify_missing state_db_missing state_db_invalid)
   @check_statuses ~w(pending passed failed waived not_applicable)
   @risk_levels ~w(low normal high critical)
   @priorities ~w(low normal high urgent)
@@ -50,6 +52,8 @@ defmodule Afp.Factory do
   def demand_sent_message_statuses, do: @demand_sent_message_statuses
   def launch_request_statuses, do: @launch_request_statuses
   def launch_modes, do: @launch_modes
+  def build_run_statuses, do: @build_run_statuses
+  def app_repo_health_states, do: @app_repo_health_states
   def check_statuses, do: @check_statuses
   def risk_levels, do: @risk_levels
   def priorities, do: @priorities
