@@ -12,9 +12,10 @@ the factory event log broadcasts updates.
 
 ## File Inventory
 
-- `opportunities_live.ex` - Primary opportunity repo console with first-run
-  setup, repo health, research launches, opportunity table, detail run state,
-  and Markdown/image file browser. Also the root route.
+- `opportunities_live.ex` - Handlers-only LiveView for the opportunity repo
+  console (mount/params/events); markup lives in `opportunities_live/`
+  (see its README). Also the root route.
+- `opportunities_live/` - Function components for the opportunities surface.
 - `app_live/index.ex` - App portfolio table, filters, and app creation.
 - `app_live/show.ex` - App detail: overview, next action, lifecycle/posture
   transitions, and per-app event history.

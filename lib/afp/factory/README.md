@@ -21,18 +21,24 @@ stay in contexts so LiveViews remain thin.
 - `factory/repo_sqlite.ex` - Single seam for all external-repo `sqlite3` CLI
   access (query/execute/escape), with busy-timeout, JSON decode, and error
   normalization.
-- `factory/agent_client.ex` - `@behaviour` for a launch transport
-  (`launch_new_turn/2`); implemented by `codex_app_client.ex`,
-  `opportunities/claude_code_client.ex`, and the test fakes.
+- `factory/agent_client.ex` - The AgentClient seam: `launch_new_turn/2`
+  behaviour plus the neutral `Request`/`Result`/`Error` envelope structs;
+  implemented by `codex_app_client.ex`, `opportunities/claude_code_client.ex`,
+  and the test fake.
+- `factory/agent_client/` - Shared seam modules: the pure `Approvals`
+  decision engine and the `CommandPolicy` command-safety vocabulary both
+  transports consume (see its README).
 - `factory/codex_app_client.ex` - Codex CLI app-server JSON-RPC transport
   (Port + NDJSON stream) with manifest-bounded approval replies.
 - `factory/events.ex` and `factory/events/event.ex` - Append-only audit log
   and PubSub broadcasts (global, per-subject, and run-activity topics).
 - `factory/opportunities.ex` plus `factory/opportunities/*` - Portable
-  opportunity repo setup, health inspection, repo-local `base.sqlite` storage,
-  schema upgrades, the Markdown/image file browser, sync/async research
-  launches (Codex or Claude Code via `AgentLaunchSupervisor`), and
-  post-research PRD/spec generation.
+  opportunity repo setup, health inspection, repo-local `base.sqlite` storage
+  behind typed read-model structs (`records.ex`: Opportunity/Run/StepResult/
+  StepEvidence — SQL column names stop at the Storage seam, ADR-0001), schema
+  upgrades, the Markdown/image file browser, the live `activity_feed.ex` read
+  model, sync/async research launches (Codex or Claude Code via
+  `AgentLaunchSupervisor`), and post-research PRD/spec generation.
 - `factory/portfolio.ex` and `factory/portfolio/app.ex` - App inventory,
   lifecycle, business posture, computed health, and repo-path matching.
 - `factory/settings.ex` and `factory/settings/setting.ex` - Key/value local
