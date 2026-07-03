@@ -39,6 +39,12 @@ stay in contexts so LiveViews remain thin.
   upgrades, the Markdown/image file browser, the live `activity_feed.ex` read
   model, sync/async research launches (Codex or Claude Code via
   `AgentLaunchSupervisor`), and post-research PRD/spec generation.
+- `factory/builds.ex` plus `factory/builds/*` - BuildRunner v2: milestone and
+  ad-hoc task launches against app repos (thin prompts through the
+  AgentClient seam), repo-local run state behind typed structs, the hard
+  review gate and per-app serial lock, AFP-authoritative verify (global
+  VerifyQueue + false-red retry), stale-run reconciliation, and report
+  reading (see its README).
 - `factory/portfolio.ex` and `factory/portfolio/app.ex` - App inventory,
   lifecycle, business posture, computed health, and repo-path matching.
 - `factory/settings.ex` and `factory/settings/setting.ex` - Key/value local

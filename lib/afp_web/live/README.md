@@ -17,5 +17,7 @@ the factory event log broadcasts updates.
   (see its README). Also the root route.
 - `opportunities_live/` - Function components for the opportunities surface.
 - `app_live/index.ex` - App portfolio table, filters, and app creation.
-- `app_live/show.ex` - App detail: overview, next action, lifecycle/posture
+- `app_live/show.ex` - App repo detail: overview, the BuildRunner v2 build
+  surface (milestones, runs, review gate, reports — components in
+  `app_live/build_components.ex`), next action, lifecycle/posture
   transitions, and per-app event history.

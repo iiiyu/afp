@@ -53,6 +53,14 @@ writes the repo-local `base.sqlite` database described in
   including build-spec package files under `spec/`, with relative path, file
   type, size, mtime, and timestamps.
 
+## External App Repo SQLite
+
+App repos (`afp-app-repo/v1`) keep build state in their own
+`afp/state.sqlite`: `build_milestones` (agent-owned milestone plan),
+`build_runs` (AFP-owned launch records with authoritative verify results and
+the `reviewed_at` hard-gate column), and `build_evidence`. AFP reads and
+writes them through `Factory.RepoSqlite`; no PostgreSQL tables are involved.
+
 ## Important Constraints
 
 - `apps.slug` is unique.

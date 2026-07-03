@@ -71,6 +71,9 @@ inactive with a reason). `Scripts/verify.sh` runs the active chain and writes
                "log": "afp/artifacts/logs/build_ios.log" } ] }
 ```
 
+The manifest's `verify` block may also pin `"simulator"` — exported to the
+chain as `VERIFY_SIM` so parallel apps never contend for one device.
+
 Gate statuses: `pass` / `fail` / `skip`. The chain exits non-zero unless all
 non-skipped gates pass. Failed test gates also produce
 `afp/artifacts/results/<gate>-summary.json` (distilled by
@@ -88,8 +91,15 @@ giving a machine-traceable chain: requirement → oracle → execution → evide
 - `build_milestones` — one row per milestone from `spec/08-milestones.md`
   (`milestone_key`, `milestone_index`, `title`, `status`
   pending/in_progress/completed/failed/blocked, `summary`, `artifact_path`,
-  `verify_json`, `attempts`). AFP pre-seeds `pending` rows at launch;
-  agents upsert on completion.
+  `verify_json`, `attempts`). Agent-owned: the scaffold seeds them and the
+  implementing agent upserts them; AFP only flips `in_progress` at launch
+  and resets a lying `in_progress` back to `pending` when a run dies.
+- `build_runs` — AFP-owned: one row per agent launch (milestone or ad-hoc
+  task) with agent/session metadata, the authoritative `verify_json` +
+  `verify_pass` from AFP's own verify execution, and `reviewed_at` — the
+  hard review gate (a completed run must be reviewed before the app's next
+  launch). `Builds.Storage.ensure_schema/1` creates the build tables
+  idempotently, so retrofits need no manual migration.
 - `build_evidence` — durable evidence registry (reports, screenshots,
   reviews) keyed by `(milestone_key, file_path)`.
 
@@ -118,11 +128,12 @@ only `.example` is committed).
 
 ## AFP Integration Status
 
-Not currently implemented. A working BuildRunner v0 (`Afp.Factory.Builds`:
-manifest health preflight, packet launch through the `Factory.AgentClient`
-behaviour, verify execution via an Elixir Port, evidence ingestion) shipped
-on 2026-07-03 and was validated end-to-end against LumaSpark — including one
-real supervised agent run — then removed in the core refactor that reduced
-AFP to the Opportunities + Apps surfaces. See git history (commits `5ccbdce`,
-`a22c1c6`) for the implementation; the rebuild should launch from the Apps
-surface rather than from harness packets.
+Implemented: BuildRunner v2 (`Afp.Factory.Builds`), designed in
+`docs/build-runner-v2-design.md` and launched from each app's repo detail
+page. Work units are repo milestones (plus an ad-hoc task fallback for
+retrofits); runs are recorded repo-locally in `build_runs`; launches go
+through the `Factory.AgentClient` seam with a thin prompt; AFP re-runs the
+verify chain as the sole authority (global VerifyQueue, per-app pinned
+simulator, one automatic retry on infra false-reds); the hard review gate
+and per-app serial lock guard every launch; stale runs reconcile on page
+load. (BuildRunner v0's packet-based flow lives in git history: `5ccbdce`.)
