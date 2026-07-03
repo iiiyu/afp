@@ -123,16 +123,6 @@ defmodule AfpWeb.Layouts do
     """
   end
 
-  def app_shell(assigns) do
-    ~H"""
-    <main>
-      <div>
-        {render_slot(@inner_block)}
-      </div>
-    </main>
-    """
-  end
-
   @doc """
   Shows the flash group with standard titles and content.
 

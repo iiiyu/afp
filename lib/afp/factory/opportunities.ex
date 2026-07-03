@@ -123,10 +123,25 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
-  def healthy_repo? do
-    case configured_repo() do
-      %{"health_state" => "healthy"} -> true
-      _repo -> false
+  def healthy_repo?, do: repo_healthy?(configured_repo())
+
+  @doc "True when the given repo config map reports a healthy contract."
+  def repo_healthy?(%{"health_state" => "healthy"}), do: true
+  def repo_healthy?(_repo), do: false
+
+  @custom_model_value "__custom__"
+
+  @doc "The launch-form sentinel meaning \"use the custom model text field\"."
+  def custom_model_value, do: @custom_model_value
+
+  @doc """
+  Resolves the launch form's model selection: the custom sentinel swaps in
+  the free-text model id; anything else passes through.
+  """
+  def resolve_model_selection(params) when is_map(params) do
+    case Map.get(params, "model") do
+      @custom_model_value -> Map.put(params, "model", Map.get(params, "model_custom"))
+      _model -> params
     end
   end
 

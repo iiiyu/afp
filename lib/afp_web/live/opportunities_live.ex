@@ -4,8 +4,12 @@
 defmodule AfpWeb.OpportunitiesLive do
   use AfpWeb, :live_view
 
+  import AfpWeb.OpportunitiesLive.Components
+  import AfpWeb.OpportunitiesLive.DetailComponents
+
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities
+  alias Afp.Factory.Opportunities.ActivityFeed
 
   @impl true
   def mount(params, _session, socket) do
@@ -81,7 +85,7 @@ defmodule AfpWeb.OpportunitiesLive do
   def handle_event("configure_repo", %{"opportunity_repo" => params}, socket) do
     case Opportunities.configure_repo(params) do
       {:ok, repo} ->
-        level = if repo["health_state"] == "healthy", do: :info, else: :error
+        level = if Opportunities.repo_healthy?(repo), do: :info, else: :error
 
         {:noreply,
          socket
@@ -127,7 +131,9 @@ defmodule AfpWeb.OpportunitiesLive do
   end
 
   def handle_event("create_opportunity", %{"opportunity" => params}, socket) do
-    case params |> resolve_model_param() |> Opportunities.create_opportunity() do
+    case params
+         |> Opportunities.resolve_model_selection()
+         |> Opportunities.create_opportunity() do
       {:ok, %{opportunity: opportunity}} ->
         agent_label = Opportunities.agent_label(opportunity.agent)
 
@@ -195,13 +201,15 @@ defmodule AfpWeb.OpportunitiesLive do
 
   defp load_opportunities(socket, params) do
     repo = Opportunities.configured_repo()
-    opportunities = if healthy?(repo), do: Opportunities.list_opportunities(), else: []
+
+    opportunities =
+      if Opportunities.repo_healthy?(repo), do: Opportunities.list_opportunities(), else: []
 
     socket =
       socket
       |> assign(:params, params)
       |> assign(:repo, repo)
-      |> assign(:repo_healthy?, healthy?(repo))
+      |> assign(:repo_healthy?, Opportunities.repo_healthy?(repo))
       |> assign(:opportunities, opportunities)
       |> assign(:opportunity_count, length(opportunities))
       |> assign(:running_count, Enum.count(opportunities, &Opportunities.running?/1))
@@ -263,15 +271,10 @@ defmodule AfpWeb.OpportunitiesLive do
     |> assign(:step_evidence, %{})
   end
 
-  # Live activity arrives much faster than the step rows change; reload the
-  # selected opportunity's read model at most once per interval.
-  @selected_refresh_interval_ms 2_000
-
   defp maybe_refresh_selected(socket, opportunity_id) do
     now = System.monotonic_time(:millisecond)
-    last = socket.assigns[:last_selected_refresh_at] || 0
 
-    if now - last >= @selected_refresh_interval_ms do
+    if ActivityFeed.refresh_due?(socket.assigns[:last_selected_refresh_at], now) do
       socket
       |> assign(:last_selected_refresh_at, now)
       |> load_selected(opportunity_id)
@@ -287,31 +290,12 @@ defmodule AfpWeb.OpportunitiesLive do
     end
   end
 
-  @run_activity_limit 30
-
   defp append_run_activity(socket, activity) do
-    entry = Map.put(activity, "id", System.unique_integer([:positive, :monotonic]))
-
-    activities =
-      [entry | socket.assigns[:run_activity] || []]
-      |> Enum.take(@run_activity_limit)
-
-    assign(socket, :run_activity, activities)
-  end
-
-  defp activity_icon("tool"), do: "hero-wrench-screwdriver"
-  defp activity_icon("tool_error"), do: "hero-exclamation-triangle"
-  defp activity_icon(_kind), do: "hero-chat-bubble-left-ellipsis"
-
-  defp step_max_score(%{step_index: 6}), do: 100
-  defp step_max_score(_step), do: 20
-
-  defp evidence_icon("screenshot"), do: "hero-photo"
-  defp evidence_icon("source_excerpt"), do: "hero-chat-bubble-bottom-center-text"
-  defp evidence_icon(_kind), do: "hero-document-magnifying-glass"
-
-  defp step_artifact_available?(step, files) do
-    Enum.any?(files, &(&1.relative_path == step.artifact_path))
+    assign(
+      socket,
+      :run_activity,
+      ActivityFeed.append(socket.assigns[:run_activity] || [], activity)
+    )
   end
 
   defp files_for(opportunity_id) do
@@ -355,62 +339,10 @@ defmodule AfpWeb.OpportunitiesLive do
   end
 
   defp current_params(socket), do: socket.assigns[:params] || %{}
-  defp healthy?(%{"health_state" => "healthy"}), do: true
-  defp healthy?(_repo), do: false
 
   defp new_opportunity_form do
     to_form(%{"agent" => "claude_code", "model" => ""}, as: :opportunity)
   end
-
-  defp agent_options do
-    Enum.map(Opportunities.supported_agents(), &{Opportunities.agent_label(&1), &1})
-  end
-
-  @custom_model_value "__custom__"
-
-  defp model_options(form) do
-    known = Opportunities.known_models(selected_agent(form))
-
-    [{"CLI default", ""}] ++
-      Enum.map(known, &{&1, &1}) ++ [{"Custom…", @custom_model_value}]
-  end
-
-  defp selected_agent(form) do
-    case form[:agent].value do
-      agent when is_binary(agent) and agent != "" -> agent
-      _value -> "claude_code"
-    end
-  end
-
-  defp custom_model_selected?(form), do: form[:model].value == @custom_model_value
-
-  defp resolve_model_param(params) do
-    case Map.get(params, "model") do
-      @custom_model_value -> Map.put(params, "model", Map.get(params, "model_custom"))
-      _model -> params
-    end
-  end
-
-  defp configured_state(nil), do: "Not configured"
-  defp configured_state(repo), do: repo["health_state"] || "unknown"
-
-  defp format_value(nil), do: "None"
-  defp format_value(""), do: "None"
-  defp format_value(value), do: value
-
-  defp format_score(nil), do: "None"
-  defp format_score(score), do: score
-
-  defp format_timestamp(nil), do: "None"
-
-  defp format_timestamp(timestamp) when is_binary(timestamp) do
-    timestamp
-    |> String.replace("T", " ")
-    |> String.replace("Z", "")
-    |> String.slice(0, 16)
-  end
-
-  defp format_timestamp(value), do: to_string(value)
 
   defp repo_error(:repo_path_required), do: "Repo path is required."
   defp repo_error(:target_path_not_directory), do: "Target path is not a directory."
@@ -442,537 +374,32 @@ defmodule AfpWeb.OpportunitiesLive do
     ~H"""
     <Layouts.app flash={@flash}>
       <div class="space-y-4">
-        <.page_header
-          eyebrow="Discovery"
-          title="Opportunities"
-          subtitle="Portable opportunity research repo, simple prompt launch, Codex/Claude Code run state, and Markdown/image review."
-        >
-          <:meta>
-            <.summary_item
-              title="Repo"
-              value={configured_state(@repo)}
-              status={configured_state(@repo)}
+        <.opportunities_header
+          repo={@repo}
+          opportunity_count={@opportunity_count}
+          running_count={@running_count}
+        />
+        <%= cond do %>
+          <% !@repo_healthy? -> %>
+            <.repo_setup repo={@repo} repo_form={@repo_form} repo_template_form={@repo_template_form} />
+          <% is_nil(@selected_opportunity) -> %>
+            <.opportunity_index
+              repo={@repo}
+              opportunity_form={@opportunity_form}
+              opportunities={@opportunities}
             />
-            <.summary_item title="Opportunities" value={@opportunity_count} hint="repo-local index" />
-            <.summary_item title="Running" value={@running_count} hint="active agent work" />
-          </:meta>
-        </.page_header>
-
-        <%= if !@repo_healthy? do %>
-          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <main class="space-y-4">
-              <.panel title="Repo Health">
-                <:subtitle>
-                  Required root: base.sqlite, opportunities/, AGENTS.md, and .skills/.
-                </:subtitle>
-
-                <div :if={is_nil(@repo)}>
-                  <.empty_state message="No opportunity repo configured." />
-                </div>
-
-                <div :if={!is_nil(@repo)} class="space-y-3">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <.status_badge status={@repo["health_state"]} />
-                    <span class="text-sm text-slate-600 dark:text-slate-300">
-                      {@repo["health_summary"]}
-                    </span>
-                  </div>
-                  <div class="text-sm text-slate-600 dark:text-slate-300">
-                    <span class="font-medium text-slate-950 dark:text-white">Path:</span>
-                    <code class="break-all text-xs">{@repo["repo_path"]}</code>
-                  </div>
-                  <div
-                    :if={@repo["missing_paths"] != [] || @repo["parse_errors"] != []}
-                    class="space-y-1 rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
-                  >
-                    <div :for={path <- @repo["missing_paths"] || []}>
-                      Missing: <code class="break-all">{path}</code>
-                    </div>
-                    <div :for={error <- @repo["parse_errors"] || []}>
-                      Note: {error}
-                    </div>
-                  </div>
-                  <button
-                    id="refresh-opportunity-repo"
-                    type="button"
-                    phx-click="refresh_repo"
-                    class="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                  >
-                    <.icon name="hero-arrow-path" class="size-4" /> Refresh
-                  </button>
-                </div>
-              </.panel>
-            </main>
-
-            <aside class="space-y-4">
-              <.panel title="Initialize Repo">
-                <:subtitle>Create a new portable opportunity repo.</:subtitle>
-                <.form
-                  for={@repo_template_form}
-                  id="opportunity-repo-template-form"
-                  phx-submit="create_repo_from_template"
-                  class="space-y-3"
-                >
-                  <.input field={@repo_template_form[:repo_path]} label="Repo path" required />
-                  <.input field={@repo_template_form[:display_name]} label="Display name" />
-                  <button class="inline-flex w-full items-center justify-center gap-2 rounded bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">
-                    <.icon name="hero-plus" class="size-4" /> Initialize repo
-                  </button>
-                </.form>
-              </.panel>
-
-              <.panel title="Select Existing">
-                <:subtitle>Register a local repo and inspect its structure.</:subtitle>
-                <.form
-                  for={@repo_form}
-                  id="opportunity-repo-form"
-                  phx-submit="configure_repo"
-                  class="space-y-3"
-                >
-                  <.input field={@repo_form[:repo_path]} label="Repo path" required />
-                  <.input field={@repo_form[:display_name]} label="Display name" />
-                  <button class="inline-flex w-full items-center justify-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                    <.icon name="hero-folder-open" class="size-4" /> Select repo
-                  </button>
-                </.form>
-              </.panel>
-            </aside>
-          </div>
-        <% else %>
-          <%= if is_nil(@selected_opportunity) do %>
-            <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
-              <main class="space-y-4">
-                <.panel title="New Opportunity">
-                  <:subtitle>Send a rough idea, need, or URL into the configured repo.</:subtitle>
-                  <.form
-                    for={@opportunity_form}
-                    id="opportunity-prompt-form"
-                    phx-change="opportunity_form_changed"
-                    phx-submit="create_opportunity"
-                    class="space-y-3"
-                  >
-                    <.input
-                      field={@opportunity_form[:raw_input]}
-                      type="textarea"
-                      label="Input"
-                      required
-                    />
-                    <.input
-                      field={@opportunity_form[:agent]}
-                      type="select"
-                      label="Agent"
-                      options={agent_options()}
-                    />
-                    <.input
-                      field={@opportunity_form[:model]}
-                      type="select"
-                      label="Model"
-                      options={model_options(@opportunity_form)}
-                    />
-                    <.input
-                      :if={custom_model_selected?(@opportunity_form)}
-                      field={@opportunity_form[:model_custom]}
-                      label="Custom model"
-                      placeholder="exact model id passed to the CLI"
-                    />
-                    <button class="inline-flex items-center gap-2 rounded bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200">
-                      <.icon name="hero-play" class="size-4" /> Launch agent
-                    </button>
-                  </.form>
-                </.panel>
-
-                <.panel title="Opportunity List">
-                  <:subtitle>Rows are backed by the repo-local base.sqlite index.</:subtitle>
-                  <div :if={@opportunities == []}>
-                    <.empty_state message="No opportunities yet." />
-                  </div>
-                  <div :if={@opportunities != []} class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                      <thead>
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          <th class="px-3 py-2">Title</th>
-                          <th class="px-3 py-2">Status</th>
-                          <th class="px-3 py-2">Stage</th>
-                          <th class="px-3 py-2">Score</th>
-                          <th class="px-3 py-2">Route</th>
-                          <th class="px-3 py-2">Updated</th>
-                        </tr>
-                      </thead>
-                      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr
-                          :for={opportunity <- @opportunities}
-                          id={"opportunity-row-#{opportunity.id}"}
-                          phx-click="open_opportunity"
-                          phx-value-id={opportunity.id}
-                          class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                        >
-                          <td class="max-w-sm px-3 py-3 font-medium text-slate-950 dark:text-white">
-                            <.link
-                              navigate={~p"/opportunities/#{opportunity.id}"}
-                              class="hover:underline"
-                            >
-                              {opportunity.title}
-                            </.link>
-                            <div
-                              :if={opportunity.source_url}
-                              class="mt-1 truncate text-xs font-normal text-slate-500"
-                            >
-                              {opportunity.source_url}
-                            </div>
-                          </td>
-                          <td class="px-3 py-3"><.status_badge status={opportunity.status} /></td>
-                          <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_value(opportunity.stage)}
-                          </td>
-                          <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_score(opportunity.total_score)}
-                          </td>
-                          <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_value(opportunity.route)}
-                          </td>
-                          <td class="px-3 py-3 text-slate-500">
-                            {format_timestamp(opportunity.updated_at)}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </.panel>
-              </main>
-
-              <aside class="space-y-4">
-                <.panel title="Configured Repo">
-                  <:subtitle>{@repo["display_name"]}</:subtitle>
-                  <div class="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                    <div class="flex items-center gap-2">
-                      <.status_badge status={@repo["health_state"]} />
-                      <span>{@repo["health_summary"]}</span>
-                    </div>
-                    <code class="block break-all rounded bg-slate-50 p-2 text-xs dark:bg-slate-950">
-                      {@repo["repo_path"]}
-                    </code>
-                    <button
-                      id="refresh-healthy-opportunity-repo"
-                      type="button"
-                      phx-click="refresh_repo"
-                      class="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                    >
-                      <.icon name="hero-arrow-path" class="size-4" /> Refresh
-                    </button>
-                  </div>
-                </.panel>
-              </aside>
-            </div>
-          <% else %>
-            <div class="space-y-4">
-              <.panel title={@selected_opportunity.title}>
-                <:subtitle>
-                  <.link
-                    navigate={~p"/opportunities"}
-                    class="inline-flex items-center gap-1 hover:underline"
-                  >
-                    <.icon name="hero-arrow-left" class="size-3" /> Back to opportunities
-                  </.link>
-                </:subtitle>
-                <div class="grid gap-3 md:grid-cols-4">
-                  <.stat title="Status" value={@selected_opportunity.status} />
-                  <.stat title="Stage" value={@selected_opportunity.stage} />
-                  <.stat title="Score" value={format_score(@selected_opportunity.total_score)} />
-                  <.stat title="Route" value={format_value(@selected_opportunity.route)} />
-                </div>
-                <div class="mt-4 grid gap-3 text-sm text-slate-600 dark:text-slate-300 lg:grid-cols-2">
-                  <div>
-                    <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                    {format_value(@selected_opportunity.agent_session_id)}
-                  </div>
-                  <div>
-                    <span class="font-medium text-slate-950 dark:text-white">Updated:</span>
-                    {format_timestamp(@selected_opportunity.updated_at)}
-                  </div>
-                  <p :if={@selected_opportunity.latest_summary} class="lg:col-span-2">
-                    {@selected_opportunity.latest_summary}
-                  </p>
-                  <p
-                    :if={@selected_opportunity.error}
-                    class="text-red-700 dark:text-red-300 lg:col-span-2"
-                  >
-                    {@selected_opportunity.error}
-                  </p>
-                  <div :if={@selected_opportunity.status == "failed"} class="lg:col-span-2">
-                    <.button
-                      phx-click="relaunch_opportunity"
-                      phx-value-id={@selected_opportunity.id}
-                      data-confirm="Re-run research for this opportunity?"
-                    >
-                      <.icon name="hero-arrow-path" class="size-4" /> Re-run research
-                    </.button>
-                  </div>
-                  <div
-                    :if={@selected_opportunity.status == "researched" && is_nil(@active_run)}
-                    class="lg:col-span-2"
-                  >
-                    <.button
-                      id={"generate-build-spec-#{@selected_opportunity.id}"}
-                      phx-click="generate_build_spec"
-                      phx-value-id={@selected_opportunity.id}
-                      data-confirm="Generate a PRD/spec package from this opportunity research?"
-                    >
-                      <.icon name="hero-document-plus" class="size-4" /> Generate PRD spec
-                    </.button>
-                  </div>
-                </div>
-              </.panel>
-
-              <div class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
-                <main class="space-y-4">
-                  <.panel title="Research Steps">
-                    <:subtitle>
-                      Seven-step pipeline; one artifact and one base.sqlite record per step.
-                    </:subtitle>
-                    <div :if={@step_results == []}>
-                      <.empty_state message="No step records. This opportunity predates the step pipeline." />
-                    </div>
-                    <div
-                      :if={@step_results != []}
-                      class="divide-y divide-slate-100 dark:divide-slate-800"
-                    >
-                      <div
-                        :for={step <- @step_results}
-                        id={"research-step-#{step.step_key}"}
-                        class="flex items-center gap-3 py-2 text-sm"
-                      >
-                        <span class="w-5 shrink-0 text-xs text-slate-400">{step.step_index}</span>
-                        <div class="min-w-0 flex-1">
-                          <div class="flex flex-wrap items-center gap-2">
-                            <.status_badge status={step.status} />
-                            <span class="font-medium text-slate-950 dark:text-white">
-                              {Opportunities.step_title(step.step_key)}
-                            </span>
-                            <span :if={step.score} class="text-xs text-slate-500">
-                              {step.score}/{step_max_score(step)}
-                            </span>
-                            <span :if={step.evidence_strength} class="text-xs text-slate-500">
-                              evidence: {step.evidence_strength}
-                            </span>
-                          </div>
-                          <p :if={step.summary} class="mt-0.5 truncate text-xs text-slate-500">
-                            {step.summary}
-                          </p>
-                          <div
-                            :if={Map.has_key?(@step_evidence, step.step_key)}
-                            class="mt-1 space-y-0.5"
-                          >
-                            <button
-                              :for={item <- @step_evidence[step.step_key]}
-                              id={"step-evidence-#{item.id}"}
-                              type="button"
-                              phx-click="select_file"
-                              phx-value-path={item.file_path}
-                              class="flex max-w-full items-center gap-1.5 text-left text-xs text-slate-500 hover:text-slate-950 hover:underline dark:hover:text-white"
-                              title={item.why_it_matters}
-                            >
-                              <.icon
-                                name={evidence_icon(item.kind)}
-                                class="size-3.5 shrink-0 text-slate-400"
-                              />
-                              <span class="truncate">{item.title}</span>
-                              <span class="shrink-0 text-slate-400">{item.kind}</span>
-                            </button>
-                          </div>
-                        </div>
-                        <button
-                          :if={step_artifact_available?(step, @opportunity_files)}
-                          type="button"
-                          phx-click="select_file"
-                          phx-value-path={step.artifact_path}
-                          class="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                        >
-                          View
-                        </button>
-                      </div>
-                    </div>
-                  </.panel>
-
-                  <.panel title="Files">
-                    <:subtitle>
-                      Markdown and image files under the selected opportunity directory.
-                    </:subtitle>
-                    <div class="grid min-h-[520px] overflow-hidden rounded border border-slate-200 dark:border-slate-800 lg:grid-cols-[280px_1fr]">
-                      <aside class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950 lg:border-b-0 lg:border-r">
-                        <div :if={@opportunity_files == []} class="p-3">
-                          <.empty_state message="No supported files found." />
-                        </div>
-                        <button
-                          :for={file <- @opportunity_files}
-                          type="button"
-                          phx-click="select_file"
-                          phx-value-path={file.relative_path}
-                          class={[
-                            "flex w-full items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 text-left text-sm hover:bg-white dark:border-slate-800 dark:hover:bg-slate-900",
-                            @selected_file_path == file.relative_path &&
-                              "bg-white font-medium text-slate-950 dark:bg-slate-900 dark:text-white"
-                          ]}
-                        >
-                          <span class="min-w-0 truncate">
-                            <.icon
-                              name={
-                                if file.type == "image", do: "hero-photo", else: "hero-document-text"
-                              }
-                              class="mr-1 inline size-4"
-                            />
-                            {file.relative_path}
-                          </span>
-                          <span class="shrink-0 text-xs text-slate-500">{file.type}</span>
-                        </button>
-                      </aside>
-
-                      <section class="min-w-0 bg-white dark:bg-slate-900">
-                        <div :if={is_nil(@selected_file)} class="p-4">
-                          <.empty_state message="Select a file." />
-                        </div>
-
-                        <div :if={@selected_file && @selected_file.type == "markdown"} class="h-full">
-                          <div class="border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500 dark:border-slate-800">
-                            {@selected_file.relative_path}
-                          </div>
-                          <pre class="min-h-[480px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-sm leading-6 text-slate-800 dark:text-slate-100"><%= @selected_file.content %></pre>
-                        </div>
-
-                        <div :if={@selected_file && @selected_file.type == "image"} class="p-4">
-                          <div class="mb-3 text-xs font-medium text-slate-500">
-                            {@selected_file.relative_path}
-                          </div>
-                          <img
-                            src={"data:#{@selected_file.mime_type};base64,#{@selected_file.data}"}
-                            class="max-h-[680px] max-w-full rounded border border-slate-200 object-contain dark:border-slate-800"
-                            alt={@selected_file.relative_path}
-                          />
-                        </div>
-                      </section>
-                    </div>
-                  </.panel>
-                </main>
-
-                <aside class="space-y-4">
-                  <.panel title="Agent Session">
-                    <:subtitle>
-                      <%= if @active_run do %>
-                        Live run state
-                      <% else %>
-                        Current opportunity stage
-                      <% end %>
-                    </:subtitle>
-                    <div
-                      :if={@active_run}
-                      class="space-y-2 text-sm text-slate-600 dark:text-slate-300"
-                    >
-                      <div class="flex items-center gap-2">
-                        <.status_badge status={@active_run.status} />
-                        <span>{@active_run.stage}</span>
-                      </div>
-                      <div>
-                        <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
-                        {Opportunities.agent_label(@active_run.agent)}
-                      </div>
-                      <div :if={@active_run.model}>
-                        <span class="font-medium text-slate-950 dark:text-white">Model:</span>
-                        {@active_run.model}
-                      </div>
-                      <div>
-                        <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                        {format_value(@active_run.agent_session_id)}
-                      </div>
-                      <div>
-                        <span class="font-medium text-slate-950 dark:text-white">Turn:</span>
-                        {format_value(@active_run.agent_turn_id)}
-                      </div>
-                    </div>
-                    <div
-                      :if={is_nil(@active_run)}
-                      class="space-y-2 text-sm text-slate-600 dark:text-slate-300"
-                    >
-                      <div class="flex items-center gap-2">
-                        <.status_badge status={@selected_opportunity.status} />
-                        <span>{@selected_opportunity.stage}</span>
-                      </div>
-                      <div>
-                        <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
-                        {Opportunities.agent_label(@selected_opportunity.agent)}
-                      </div>
-                      <div>
-                        <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                        {format_value(@selected_opportunity.agent_session_id)}
-                      </div>
-                    </div>
-
-                    <div :if={@run_activity != []} class="mt-3">
-                      <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Live activity
-                      </div>
-                      <div
-                        id="agent-activity-feed"
-                        class="max-h-72 space-y-1.5 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950"
-                      >
-                        <div
-                          :for={entry <- @run_activity}
-                          id={"agent-activity-#{entry["id"]}"}
-                          class="flex items-start gap-1.5 text-xs"
-                        >
-                          <.icon
-                            name={activity_icon(entry["kind"])}
-                            class={[
-                              "mt-0.5 size-3.5 shrink-0",
-                              if(entry["kind"] == "tool_error",
-                                do: "text-red-500",
-                                else: "text-slate-400"
-                              )
-                            ]}
-                          />
-                          <span class="min-w-0 break-words text-slate-600 dark:text-slate-300">
-                            {entry["text"]}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </.panel>
-
-                  <.panel title="Runs">
-                    <div :if={@opportunity_runs == []}>
-                      <.empty_state message="No runs recorded." />
-                    </div>
-                    <div class="divide-y divide-slate-100 dark:divide-slate-800">
-                      <article :for={run <- @opportunity_runs} class="py-3 text-sm">
-                        <div class="flex flex-wrap items-center gap-2">
-                          <.status_badge status={run.status} />
-                          <span class="font-medium text-slate-950 dark:text-white">
-                            {run.run_type}
-                          </span>
-                          <span class="text-xs text-slate-500">
-                            {Opportunities.agent_label(run.agent)}
-                          </span>
-                          <span :if={run.model} class="text-xs text-slate-500">
-                            · {run.model}
-                          </span>
-                        </div>
-                        <div class="mt-1 text-slate-600 dark:text-slate-300">
-                          {run.stage} · {format_timestamp(run.updated_at)}
-                        </div>
-                        <div
-                          :if={run.agent_session_id}
-                          class="mt-1 break-all text-xs text-slate-500"
-                        >
-                          {run.agent_session_id}
-                        </div>
-                        <p :if={run.error} class="mt-1 text-xs text-red-700 dark:text-red-300">
-                          {run.error}
-                        </p>
-                      </article>
-                    </div>
-                  </.panel>
-                </aside>
-              </div>
-            </div>
-          <% end %>
+          <% true -> %>
+            <.opportunity_detail
+              opportunity={@selected_opportunity}
+              runs={@opportunity_runs}
+              active_run={@active_run}
+              step_results={@step_results}
+              step_evidence={@step_evidence}
+              files={@opportunity_files}
+              selected_file_path={@selected_file_path}
+              selected_file={@selected_file}
+              run_activity={@run_activity}
+            />
         <% end %>
       </div>
     </Layouts.app>
