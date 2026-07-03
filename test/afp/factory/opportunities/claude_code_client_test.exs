@@ -69,6 +69,40 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClientTest do
              )
   end
 
+  test "launch_new_turn merges extra_bash_allow into permission settings" do
+    dir = stub_dir()
+
+    script =
+      write_stub(dir, """
+      {"type":"system","subtype":"init","session_id":"sess-3","model":"fake-model","uuid":"uuid-3"}
+      {"type":"result","subtype":"success","is_error":false,"result":"Done."}
+      """)
+
+    assert {:ok, _result} =
+             ClaudeCodeClient.launch_new_turn(
+               %{
+                 cwd: dir,
+                 input_text: "build milestone",
+                 extra_bash_allow: ["xcodebuild *", "sh Scripts/*"]
+               },
+               claude_executable: script,
+               timeout_ms: 10_000
+             )
+
+    settings =
+      dir
+      |> Path.join("cli-args.txt")
+      |> File.read!()
+      |> String.split("\n")
+      |> Enum.find(&String.starts_with?(&1, "{"))
+      |> Jason.decode!()
+
+    allow = get_in(settings, ["permissions", "allow"])
+    assert "Bash(xcodebuild *)" in allow
+    assert "Bash(sh Scripts/*)" in allow
+    assert "Bash(rm *)" in get_in(settings, ["permissions", "deny"])
+  end
+
   defp stub_dir do
     dir =
       Path.join(System.tmp_dir!(), "claude-client-test-#{System.unique_integer([:positive])}")

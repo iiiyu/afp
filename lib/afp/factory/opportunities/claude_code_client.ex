@@ -319,8 +319,15 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
     # directories; destructive commands stay on the deny list.
     bash_rules = Enum.map(["sqlite3", "curl", "mkdir" | @safe_read_commands], &"Bash(#{&1} *)")
 
+    # Launch contexts with wider toolchains (e.g. BuildRunner: xcodebuild,
+    # verify scripts) pass additional command patterns; deny rules still win.
+    extra_rules =
+      attrs
+      |> Map.get(:extra_bash_allow, [])
+      |> Enum.map(&"Bash(#{&1})")
+
     ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"] ++
-      write_rules(attrs) ++ bash_rules
+      write_rules(attrs) ++ bash_rules ++ extra_rules
   end
 
   defp write_rules(attrs) do

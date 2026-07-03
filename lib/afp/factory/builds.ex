@@ -19,6 +19,32 @@ defmodule Afp.Factory.Builds do
   @codex_launch_supervisor Afp.Factory.Demand.CodexLaunchSupervisor
   @agents ~w(claude_code codex)
 
+  # Build toolchain commands the agent may run on top of the client's safe
+  # defaults. Destructive patterns stay denied by the client; scripts without
+  # an executable bit are reachable via `sh Scripts/...`.
+  @build_bash_allow [
+    "xcodebuild *",
+    "xcrun *",
+    "swift *",
+    "xcodegen *",
+    "xcbeautify *",
+    "make *",
+    "jq *",
+    "sips *",
+    "plutil *",
+    "touch *",
+    "Scripts/*",
+    "./Scripts/*",
+    "sh Scripts/*",
+    "bash Scripts/*",
+    "git status*",
+    "git diff*",
+    "git log*",
+    "git show*",
+    "git add *",
+    "git commit *"
+  ]
+
   def agents, do: @agents
 
   def list_build_runs(params \\ %{}) do
@@ -249,6 +275,7 @@ defmodule Afp.Factory.Builds do
       approval_policy: "on-request",
       sandbox_mode: "workspace-write",
       source_repo_root: repo_path,
+      extra_bash_allow: @build_bash_allow,
       sqlite_path: AppRepo.state_db_path(manifest),
       network_access: true,
       sandbox_policy: %{
