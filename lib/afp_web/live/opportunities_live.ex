@@ -45,7 +45,7 @@ defmodule AfpWeb.OpportunitiesLive do
         socket
       ) do
     case socket.assigns.selected_opportunity do
-      %{"id" => ^opportunity_id} ->
+      %{id: ^opportunity_id} ->
         {:noreply,
          socket
          |> append_run_activity(message.activity)
@@ -129,13 +129,13 @@ defmodule AfpWeb.OpportunitiesLive do
   def handle_event("create_opportunity", %{"opportunity" => params}, socket) do
     case params |> resolve_model_param() |> Opportunities.create_opportunity() do
       {:ok, %{opportunity: opportunity}} ->
-        agent_label = Opportunities.agent_label(opportunity["agent"])
+        agent_label = Opportunities.agent_label(opportunity.agent)
 
         {:noreply,
          socket
          |> put_flash(:info, "Opportunity created and #{agent_label} launch started.")
          |> assign(:opportunity_form, new_opportunity_form())
-         |> push_navigate(to: ~p"/opportunities/#{opportunity["id"]}")}
+         |> push_navigate(to: ~p"/opportunities/#{opportunity.id}")}
 
       {:error, reason} ->
         {:noreply,
@@ -152,7 +152,7 @@ defmodule AfpWeb.OpportunitiesLive do
   def handle_event("relaunch_opportunity", %{"id" => id}, socket) do
     case Opportunities.relaunch_opportunity(id) do
       {:ok, %{opportunity: opportunity}} ->
-        agent_label = Opportunities.agent_label(opportunity["agent"])
+        agent_label = Opportunities.agent_label(opportunity.agent)
 
         {:noreply,
          socket
@@ -172,7 +172,7 @@ defmodule AfpWeb.OpportunitiesLive do
       {:ok, %{opportunity: opportunity}} ->
         {:noreply,
          socket
-         |> put_flash(:info, "PRD/spec generation launched for #{opportunity["title"]}.")
+         |> put_flash(:info, "PRD/spec generation launched for #{opportunity.title}.")
          |> load_opportunities(current_params(socket))}
 
       {:error, reason} ->
@@ -189,7 +189,7 @@ defmodule AfpWeb.OpportunitiesLive do
         {:noreply, socket}
 
       opportunity ->
-        {:noreply, assign_selected_file(socket, opportunity["id"], path)}
+        {:noreply, assign_selected_file(socket, opportunity.id, path)}
     end
   end
 
@@ -204,7 +204,7 @@ defmodule AfpWeb.OpportunitiesLive do
       |> assign(:repo_healthy?, healthy?(repo))
       |> assign(:opportunities, opportunities)
       |> assign(:opportunity_count, length(opportunities))
-      |> assign(:running_count, Enum.count(opportunities, &(&1["status"] == "running")))
+      |> assign(:running_count, Enum.count(opportunities, &Opportunities.running?/1))
 
     case params["id"] do
       nil -> clear_selected(socket)
@@ -226,7 +226,7 @@ defmodule AfpWeb.OpportunitiesLive do
         |> assign(:opportunity_files, files)
         |> assign(:step_results, step_results_for(id))
         |> assign(:step_evidence, step_evidence_for(id))
-        |> assign(:active_run, Enum.find(runs, &(&1["status"] == "running")))
+        |> assign(:active_run, Enum.find(runs, &Opportunities.running?/1))
         |> assign_selected_file(id, selected_path)
 
       {:error, _reason} ->
@@ -245,7 +245,7 @@ defmodule AfpWeb.OpportunitiesLive do
 
   defp step_evidence_for(opportunity_id) do
     case Opportunities.list_step_evidence(opportunity_id) do
-      evidence when is_list(evidence) -> Enum.group_by(evidence, & &1["step_key"])
+      evidence when is_list(evidence) -> Enum.group_by(evidence, & &1.step_key)
       _error -> %{}
     end
   end
@@ -282,7 +282,7 @@ defmodule AfpWeb.OpportunitiesLive do
 
   defp clear_run_activity_on_switch(socket, id) do
     case socket.assigns[:selected_opportunity] do
-      %{"id" => ^id} -> socket
+      %{id: ^id} -> socket
       _selected -> assign(socket, :run_activity, [])
     end
   end
@@ -303,24 +303,15 @@ defmodule AfpWeb.OpportunitiesLive do
   defp activity_icon("tool_error"), do: "hero-exclamation-triangle"
   defp activity_icon(_kind), do: "hero-chat-bubble-left-ellipsis"
 
-  defp step_max_score(%{"step_index" => 6}), do: 100
+  defp step_max_score(%{step_index: 6}), do: 100
   defp step_max_score(_step), do: 20
 
   defp evidence_icon("screenshot"), do: "hero-photo"
   defp evidence_icon("source_excerpt"), do: "hero-chat-bubble-bottom-center-text"
   defp evidence_icon(_kind), do: "hero-document-magnifying-glass"
 
-  defp run_model(%{"payload_json" => json}) when is_binary(json) do
-    case Jason.decode(json) do
-      {:ok, %{"model" => model}} when is_binary(model) and model != "" -> model
-      _decoded -> nil
-    end
-  end
-
-  defp run_model(_run), do: nil
-
   defp step_artifact_available?(step, files) do
-    Enum.any?(files, &(&1.relative_path == step["artifact_path"]))
+    Enum.any?(files, &(&1.relative_path == step.artifact_path))
   end
 
   defp files_for(opportunity_id) do
@@ -610,37 +601,37 @@ defmodule AfpWeb.OpportunitiesLive do
                       <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr
                           :for={opportunity <- @opportunities}
-                          id={"opportunity-row-#{opportunity["id"]}"}
+                          id={"opportunity-row-#{opportunity.id}"}
                           phx-click="open_opportunity"
-                          phx-value-id={opportunity["id"]}
+                          phx-value-id={opportunity.id}
                           class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
                         >
                           <td class="max-w-sm px-3 py-3 font-medium text-slate-950 dark:text-white">
                             <.link
-                              navigate={~p"/opportunities/#{opportunity["id"]}"}
+                              navigate={~p"/opportunities/#{opportunity.id}"}
                               class="hover:underline"
                             >
-                              {opportunity["title"]}
+                              {opportunity.title}
                             </.link>
                             <div
-                              :if={opportunity["source_url"]}
+                              :if={opportunity.source_url}
                               class="mt-1 truncate text-xs font-normal text-slate-500"
                             >
-                              {opportunity["source_url"]}
+                              {opportunity.source_url}
                             </div>
                           </td>
-                          <td class="px-3 py-3"><.status_badge status={opportunity["status"]} /></td>
+                          <td class="px-3 py-3"><.status_badge status={opportunity.status} /></td>
                           <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_value(opportunity["stage"])}
+                            {format_value(opportunity.stage)}
                           </td>
                           <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_score(opportunity["total_score"])}
+                            {format_score(opportunity.total_score)}
                           </td>
                           <td class="px-3 py-3 text-slate-600 dark:text-slate-300">
-                            {format_value(opportunity["route"])}
+                            {format_value(opportunity.route)}
                           </td>
                           <td class="px-3 py-3 text-slate-500">
-                            {format_timestamp(opportunity["updated_at"])}
+                            {format_timestamp(opportunity.updated_at)}
                           </td>
                         </tr>
                       </tbody>
@@ -674,7 +665,7 @@ defmodule AfpWeb.OpportunitiesLive do
             </div>
           <% else %>
             <div class="space-y-4">
-              <.panel title={@selected_opportunity["title"]}>
+              <.panel title={@selected_opportunity.title}>
                 <:subtitle>
                   <.link
                     navigate={~p"/opportunities"}
@@ -684,46 +675,46 @@ defmodule AfpWeb.OpportunitiesLive do
                   </.link>
                 </:subtitle>
                 <div class="grid gap-3 md:grid-cols-4">
-                  <.stat title="Status" value={@selected_opportunity["status"]} />
-                  <.stat title="Stage" value={@selected_opportunity["stage"]} />
-                  <.stat title="Score" value={format_score(@selected_opportunity["total_score"])} />
-                  <.stat title="Route" value={format_value(@selected_opportunity["route"])} />
+                  <.stat title="Status" value={@selected_opportunity.status} />
+                  <.stat title="Stage" value={@selected_opportunity.stage} />
+                  <.stat title="Score" value={format_score(@selected_opportunity.total_score)} />
+                  <.stat title="Route" value={format_value(@selected_opportunity.route)} />
                 </div>
                 <div class="mt-4 grid gap-3 text-sm text-slate-600 dark:text-slate-300 lg:grid-cols-2">
                   <div>
                     <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                    {format_value(@selected_opportunity["codex_session_id"])}
+                    {format_value(@selected_opportunity.agent_session_id)}
                   </div>
                   <div>
                     <span class="font-medium text-slate-950 dark:text-white">Updated:</span>
-                    {format_timestamp(@selected_opportunity["updated_at"])}
+                    {format_timestamp(@selected_opportunity.updated_at)}
                   </div>
-                  <p :if={@selected_opportunity["latest_summary"]} class="lg:col-span-2">
-                    {@selected_opportunity["latest_summary"]}
+                  <p :if={@selected_opportunity.latest_summary} class="lg:col-span-2">
+                    {@selected_opportunity.latest_summary}
                   </p>
                   <p
-                    :if={@selected_opportunity["error"]}
+                    :if={@selected_opportunity.error}
                     class="text-red-700 dark:text-red-300 lg:col-span-2"
                   >
-                    {@selected_opportunity["error"]}
+                    {@selected_opportunity.error}
                   </p>
-                  <div :if={@selected_opportunity["status"] == "failed"} class="lg:col-span-2">
+                  <div :if={@selected_opportunity.status == "failed"} class="lg:col-span-2">
                     <.button
                       phx-click="relaunch_opportunity"
-                      phx-value-id={@selected_opportunity["id"]}
+                      phx-value-id={@selected_opportunity.id}
                       data-confirm="Re-run research for this opportunity?"
                     >
                       <.icon name="hero-arrow-path" class="size-4" /> Re-run research
                     </.button>
                   </div>
                   <div
-                    :if={@selected_opportunity["status"] == "researched" && is_nil(@active_run)}
+                    :if={@selected_opportunity.status == "researched" && is_nil(@active_run)}
                     class="lg:col-span-2"
                   >
                     <.button
-                      id={"generate-build-spec-#{@selected_opportunity["id"]}"}
+                      id={"generate-build-spec-#{@selected_opportunity.id}"}
                       phx-click="generate_build_spec"
-                      phx-value-id={@selected_opportunity["id"]}
+                      phx-value-id={@selected_opportunity.id}
                       data-confirm="Generate a PRD/spec package from this opportunity research?"
                     >
                       <.icon name="hero-document-plus" class="size-4" /> Generate PRD spec
@@ -747,45 +738,45 @@ defmodule AfpWeb.OpportunitiesLive do
                     >
                       <div
                         :for={step <- @step_results}
-                        id={"research-step-#{step["step_key"]}"}
+                        id={"research-step-#{step.step_key}"}
                         class="flex items-center gap-3 py-2 text-sm"
                       >
-                        <span class="w-5 shrink-0 text-xs text-slate-400">{step["step_index"]}</span>
+                        <span class="w-5 shrink-0 text-xs text-slate-400">{step.step_index}</span>
                         <div class="min-w-0 flex-1">
                           <div class="flex flex-wrap items-center gap-2">
-                            <.status_badge status={step["status"]} />
+                            <.status_badge status={step.status} />
                             <span class="font-medium text-slate-950 dark:text-white">
-                              {Opportunities.step_title(step["step_key"])}
+                              {Opportunities.step_title(step.step_key)}
                             </span>
-                            <span :if={step["score"]} class="text-xs text-slate-500">
-                              {step["score"]}/{step_max_score(step)}
+                            <span :if={step.score} class="text-xs text-slate-500">
+                              {step.score}/{step_max_score(step)}
                             </span>
-                            <span :if={step["evidence_strength"]} class="text-xs text-slate-500">
-                              evidence: {step["evidence_strength"]}
+                            <span :if={step.evidence_strength} class="text-xs text-slate-500">
+                              evidence: {step.evidence_strength}
                             </span>
                           </div>
-                          <p :if={step["summary"]} class="mt-0.5 truncate text-xs text-slate-500">
-                            {step["summary"]}
+                          <p :if={step.summary} class="mt-0.5 truncate text-xs text-slate-500">
+                            {step.summary}
                           </p>
                           <div
-                            :if={Map.has_key?(@step_evidence, step["step_key"])}
+                            :if={Map.has_key?(@step_evidence, step.step_key)}
                             class="mt-1 space-y-0.5"
                           >
                             <button
-                              :for={item <- @step_evidence[step["step_key"]]}
-                              id={"step-evidence-#{item["id"]}"}
+                              :for={item <- @step_evidence[step.step_key]}
+                              id={"step-evidence-#{item.id}"}
                               type="button"
                               phx-click="select_file"
-                              phx-value-path={item["file_path"]}
+                              phx-value-path={item.file_path}
                               class="flex max-w-full items-center gap-1.5 text-left text-xs text-slate-500 hover:text-slate-950 hover:underline dark:hover:text-white"
-                              title={item["why_it_matters"]}
+                              title={item.why_it_matters}
                             >
                               <.icon
-                                name={evidence_icon(item["kind"])}
+                                name={evidence_icon(item.kind)}
                                 class="size-3.5 shrink-0 text-slate-400"
                               />
-                              <span class="truncate">{item["title"]}</span>
-                              <span class="shrink-0 text-slate-400">{item["kind"]}</span>
+                              <span class="truncate">{item.title}</span>
+                              <span class="shrink-0 text-slate-400">{item.kind}</span>
                             </button>
                           </div>
                         </div>
@@ -793,7 +784,7 @@ defmodule AfpWeb.OpportunitiesLive do
                           :if={step_artifact_available?(step, @opportunity_files)}
                           type="button"
                           phx-click="select_file"
-                          phx-value-path={step["artifact_path"]}
+                          phx-value-path={step.artifact_path}
                           class="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                         >
                           View
@@ -876,24 +867,24 @@ defmodule AfpWeb.OpportunitiesLive do
                       class="space-y-2 text-sm text-slate-600 dark:text-slate-300"
                     >
                       <div class="flex items-center gap-2">
-                        <.status_badge status={@active_run["status"]} />
-                        <span>{@active_run["stage"]}</span>
+                        <.status_badge status={@active_run.status} />
+                        <span>{@active_run.stage}</span>
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
-                        {Opportunities.agent_label(@active_run["agent"])}
+                        {Opportunities.agent_label(@active_run.agent)}
                       </div>
-                      <div :if={run_model(@active_run)}>
+                      <div :if={@active_run.model}>
                         <span class="font-medium text-slate-950 dark:text-white">Model:</span>
-                        {run_model(@active_run)}
+                        {@active_run.model}
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                        {format_value(@active_run["codex_session_id"])}
+                        {format_value(@active_run.agent_session_id)}
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Turn:</span>
-                        {format_value(@active_run["codex_turn_id"])}
+                        {format_value(@active_run.agent_turn_id)}
                       </div>
                     </div>
                     <div
@@ -901,16 +892,16 @@ defmodule AfpWeb.OpportunitiesLive do
                       class="space-y-2 text-sm text-slate-600 dark:text-slate-300"
                     >
                       <div class="flex items-center gap-2">
-                        <.status_badge status={@selected_opportunity["status"]} />
-                        <span>{@selected_opportunity["stage"]}</span>
+                        <.status_badge status={@selected_opportunity.status} />
+                        <span>{@selected_opportunity.stage}</span>
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Agent:</span>
-                        {Opportunities.agent_label(@selected_opportunity["agent"])}
+                        {Opportunities.agent_label(@selected_opportunity.agent)}
                       </div>
                       <div>
                         <span class="font-medium text-slate-950 dark:text-white">Session:</span>
-                        {format_value(@selected_opportunity["codex_session_id"])}
+                        {format_value(@selected_opportunity.agent_session_id)}
                       </div>
                     </div>
 
@@ -952,28 +943,28 @@ defmodule AfpWeb.OpportunitiesLive do
                     <div class="divide-y divide-slate-100 dark:divide-slate-800">
                       <article :for={run <- @opportunity_runs} class="py-3 text-sm">
                         <div class="flex flex-wrap items-center gap-2">
-                          <.status_badge status={run["status"]} />
+                          <.status_badge status={run.status} />
                           <span class="font-medium text-slate-950 dark:text-white">
-                            {run["run_type"]}
+                            {run.run_type}
                           </span>
                           <span class="text-xs text-slate-500">
-                            {Opportunities.agent_label(run["agent"])}
+                            {Opportunities.agent_label(run.agent)}
                           </span>
-                          <span :if={run_model(run)} class="text-xs text-slate-500">
-                            · {run_model(run)}
+                          <span :if={run.model} class="text-xs text-slate-500">
+                            · {run.model}
                           </span>
                         </div>
                         <div class="mt-1 text-slate-600 dark:text-slate-300">
-                          {run["stage"]} · {format_timestamp(run["updated_at"])}
+                          {run.stage} · {format_timestamp(run.updated_at)}
                         </div>
                         <div
-                          :if={run["codex_session_id"]}
+                          :if={run.agent_session_id}
                           class="mt-1 break-all text-xs text-slate-500"
                         >
-                          {run["codex_session_id"]}
+                          {run.agent_session_id}
                         </div>
-                        <p :if={run["error"]} class="mt-1 text-xs text-red-700 dark:text-red-300">
-                          {run["error"]}
+                        <p :if={run.error} class="mt-1 text-xs text-red-700 dark:text-red-300">
+                          {run.error}
                         </p>
                       </article>
                     </div>

@@ -1,32 +1,25 @@
 # @input  - Configured opportunity repo maps, opportunity rows, run rows, and file metadata
-# @output - Repo-local base.sqlite reads and writes for the portable Opportunity repo
-# @pos    - Internal storage interface behind the Opportunity context and agent launch modules
+# @output - Repo-local base.sqlite row DML returning typed read-model structs
+# @pos    - The Storage seam: SQL and column names live here, structs cross it
 defmodule Afp.Factory.Opportunities.Storage do
   alias Afp.Factory
+  alias Afp.Factory.Opportunities.Opportunity
+  alias Afp.Factory.Opportunities.Run
+  alias Afp.Factory.Opportunities.StepEvidence
+  alias Afp.Factory.Opportunities.StepResult
   alias Afp.Factory.Opportunities.StorageSchema
   alias Afp.Factory.RepoSqlite
 
-  defdelegate base_sqlite_path, to: StorageSchema
-  defdelegate schema_version, to: StorageSchema
-  defdelegate template_version, to: StorageSchema
-  defdelegate create_base(repo_path, display_name), to: StorageSchema
-  defdelegate inspect_schema(db_path), to: StorageSchema
-  defdelegate core_schema_present?(db_path), to: StorageSchema
-  defdelegate upgrade_schema(db_path), to: StorageSchema
-  defdelegate stored_template_version(db_path), to: StorageSchema
-  defdelegate stored_display_name(db_path), to: StorageSchema
-  defdelegate record_versions(db_path), to: StorageSchema
-
   def list_opportunities(repo) do
     with {:ok, rows} <- sqlite_json(repo, opportunity_select_sql()) do
-      {:ok, Enum.map(rows, &normalize_opportunity_row/1)}
+      {:ok, Enum.map(rows, &Opportunity.from_row/1)}
     end
   end
 
   def get_opportunity(repo, id) do
     with {:ok, rows} <- sqlite_json(repo, opportunity_select_sql("WHERE id = #{sql_value(id)}")) do
       case rows do
-        [row | _rest] -> {:ok, normalize_opportunity_row(row)}
+        [row | _rest] -> {:ok, Opportunity.from_row(row)}
         [] -> {:error, :opportunity_not_found}
       end
     end
@@ -36,16 +29,14 @@ defmodule Afp.Factory.Opportunities.Storage do
     sqlite_json(
       repo,
       """
-      SELECT id, opportunity_id, run_type, agent, status, stage, prompt, codex_session_id,
-             codex_thread_id, codex_turn_id, transcript_path, final_answer,
-             error, started_at, completed_at, created_at, updated_at, payload_json
+      SELECT #{Run.select_columns()}
       FROM opportunity_runs
       WHERE opportunity_id = #{sql_value(opportunity_id)}
       ORDER BY datetime(updated_at) DESC, rowid DESC
       """
     )
     |> case do
-      {:ok, rows} -> {:ok, Enum.map(rows, &normalize_run_row/1)}
+      {:ok, rows} -> {:ok, Enum.map(rows, &Run.from_row/1)}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -54,26 +45,32 @@ defmodule Afp.Factory.Opportunities.Storage do
     sqlite_json(
       repo,
       """
-      SELECT id, opportunity_id, run_id, step_key, step_index, status, score,
-             evidence_strength, summary, artifact_path, created_at, updated_at
+      SELECT #{StepResult.select_columns()}
       FROM opportunity_step_results
       WHERE opportunity_id = #{sql_value(opportunity_id)}
       ORDER BY step_index ASC
       """
     )
+    |> case do
+      {:ok, rows} -> {:ok, Enum.map(rows, &StepResult.from_row/1)}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def list_step_evidence(repo, opportunity_id) do
     sqlite_json(
       repo,
       """
-      SELECT id, opportunity_id, run_id, step_key, title, kind, file_path,
-             why_it_matters, source_url, created_at, updated_at
+      SELECT #{StepEvidence.select_columns()}
       FROM opportunity_step_evidence
       WHERE opportunity_id = #{sql_value(opportunity_id)}
       ORDER BY datetime(created_at) ASC, file_path ASC
       """
     )
+    |> case do
+      {:ok, rows} -> {:ok, Enum.map(rows, &StepEvidence.from_row/1)}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def insert_opportunity(repo, attrs) do
@@ -93,16 +90,16 @@ defmodule Afp.Factory.Opportunities.Storage do
              """
            ) do
       {:ok,
-       %{
-         "id" => opportunity_id,
-         "title" => attrs.title,
-         "raw_input" => attrs.raw_input,
-         "source_url" => attrs.source_url,
-         "agent" => attrs.agent,
-         "status" => "captured",
-         "stage" => "created",
-         "created_at" => now,
-         "updated_at" => now
+       %Opportunity{
+         id: opportunity_id,
+         title: attrs.title,
+         raw_input: attrs.raw_input,
+         source_url: attrs.source_url,
+         agent: attrs.agent,
+         status: "captured",
+         stage: "created",
+         created_at: now,
+         updated_at: now
        }}
     end
   end
@@ -110,7 +107,7 @@ defmodule Afp.Factory.Opportunities.Storage do
   def insert_initial_run(repo, attrs) do
     run_id = Map.fetch!(attrs, :id)
     now = Factory.now() |> DateTime.to_iso8601()
-    payload_json = Jason.encode!(%{"model" => attrs.model})
+    payload = %{"model" => attrs.model}
 
     with :ok <-
            sqlite_exec(
@@ -121,7 +118,7 @@ defmodule Afp.Factory.Opportunities.Storage do
              VALUES
                (#{sql_value(run_id)}, #{sql_value(attrs.opportunity_id)}, 'initial_research',
                 #{sql_value(attrs.agent)}, 'queued', 'queued', #{sql_value(attrs.prompt)},
-                #{sql_value(payload_json)}, #{sql_value(now)}, #{sql_value(now)});
+                #{sql_value(Jason.encode!(payload))}, #{sql_value(now)}, #{sql_value(now)});
 
              UPDATE opportunities
              SET current_run_id = #{sql_value(run_id)},
@@ -133,26 +130,14 @@ defmodule Afp.Factory.Opportunities.Storage do
              #{StorageSchema.seed_step_results_sql(attrs.opportunity_id, run_id, attrs.steps, now)}
              """
            ) do
-      {:ok,
-       %{
-         "id" => run_id,
-         "opportunity_id" => attrs.opportunity_id,
-         "run_type" => "initial_research",
-         "agent" => attrs.agent,
-         "model" => attrs.model,
-         "status" => "queued",
-         "stage" => "queued",
-         "prompt" => attrs.prompt,
-         "created_at" => now,
-         "updated_at" => now
-       }}
+      {:ok, queued_run(run_id, attrs, "initial_research", payload, now)}
     end
   end
 
   def insert_build_spec_run(repo, attrs) do
     run_id = Map.fetch!(attrs, :id)
     now = Factory.now() |> DateTime.to_iso8601()
-    payload_json = Jason.encode!(%{"model" => attrs.model})
+    payload = %{"model" => attrs.model}
 
     with :ok <-
            sqlite_exec(
@@ -163,7 +148,7 @@ defmodule Afp.Factory.Opportunities.Storage do
              VALUES
                (#{sql_value(run_id)}, #{sql_value(attrs.opportunity_id)}, 'build_spec',
                 #{sql_value(attrs.agent)}, 'queued', 'queued', #{sql_value(attrs.prompt)},
-                #{sql_value(payload_json)}, #{sql_value(now)}, #{sql_value(now)});
+                #{sql_value(Jason.encode!(payload))}, #{sql_value(now)}, #{sql_value(now)});
 
              UPDATE opportunities
              SET current_run_id = #{sql_value(run_id)},
@@ -174,19 +159,7 @@ defmodule Afp.Factory.Opportunities.Storage do
              WHERE id = #{sql_value(attrs.opportunity_id)};
              """
            ) do
-      {:ok,
-       %{
-         "id" => run_id,
-         "opportunity_id" => attrs.opportunity_id,
-         "run_type" => "build_spec",
-         "agent" => attrs.agent,
-         "model" => attrs.model,
-         "status" => "queued",
-         "stage" => "queued",
-         "prompt" => attrs.prompt,
-         "created_at" => now,
-         "updated_at" => now
-       }}
+      {:ok, queued_run(run_id, attrs, "build_spec", payload, now)}
     end
   end
 
@@ -326,6 +299,22 @@ defmodule Afp.Factory.Opportunities.Storage do
     )
   end
 
+  defp queued_run(run_id, attrs, run_type, payload, now) do
+    %Run{
+      id: run_id,
+      opportunity_id: attrs.opportunity_id,
+      run_type: run_type,
+      agent: attrs.agent,
+      model: attrs.model,
+      status: "queued",
+      stage: "queued",
+      prompt: attrs.prompt,
+      payload: payload,
+      created_at: now,
+      updated_at: now
+    }
+  end
+
   defp file_upsert_sql(opportunity_id, file) do
     now = now_iso()
 
@@ -346,16 +335,12 @@ defmodule Afp.Factory.Opportunities.Storage do
 
   defp opportunity_select_sql(where_clause \\ "") do
     """
-    SELECT id, title, raw_input, source_url, agent, status, stage, route, total_score,
-           current_run_id, codex_session_id, latest_summary, error, created_at, updated_at
+    SELECT #{Opportunity.select_columns()}
     FROM opportunities
     #{where_clause}
     ORDER BY datetime(updated_at) DESC
     """
   end
-
-  defp normalize_opportunity_row(row), do: row
-  defp normalize_run_row(row), do: row
 
   defp sqlite_json(repo, sql), do: RepoSqlite.query(db_path(repo), sql)
   defp sqlite_exec(repo, sql), do: RepoSqlite.execute(db_path(repo), sql)

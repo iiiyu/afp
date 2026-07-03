@@ -5,7 +5,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
   require Logger
 
   alias Afp.Factory
-  alias Afp.Factory.Opportunities.Storage
+  alias Afp.Factory.Opportunities.StorageSchema
 
   @base_sqlite_path "base.sqlite"
   @agents_path "AGENTS.md"
@@ -56,7 +56,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
          display_name <-
            Factory.trim_nil(attr_value(attrs, "display_name")) || display_name(repo_path),
          :ok <- write_repo_files(repo_path, display_name),
-         :ok <- Storage.create_base(repo_path, display_name),
+         :ok <- StorageSchema.create_base(repo_path, display_name),
          :ok <- init_git(repo_path) do
       {:ok, %{"repo_path" => repo_path, "display_name" => display_name}}
     end
@@ -117,7 +117,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
       if Enum.any?(missing_paths, &String.ends_with?(&1, @base_sqlite_path)) do
         {:error, :sqlite_missing}
       else
-        Storage.inspect_schema(Path.join(repo_path, @base_sqlite_path))
+        StorageSchema.inspect_schema(Path.join(repo_path, @base_sqlite_path))
       end
 
     health_from(repo_path, missing_paths, parse_errors, sqlite_health)
@@ -164,7 +164,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
 
         health_attrs(
           "healthy",
-          "Opportunity repo is ready. base.sqlite schema v#{sqlite_info["schema_version"] || Storage.schema_version()} is available.",
+          "Opportunity repo is ready. base.sqlite schema v#{sqlite_info["schema_version"] || StorageSchema.schema_version()} is available.",
           [],
           parse_errors,
           sqlite_info
@@ -216,7 +216,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
     db_path = Path.join(repo_path, @base_sqlite_path)
 
     with true <- File.regular?(db_path),
-         {:ok, true} <- Storage.core_schema_present?(db_path) do
+         {:ok, true} <- StorageSchema.core_schema_present?(db_path) do
       upgrade_repo(repo_path, db_path)
     else
       _precondition_failed -> :ok
@@ -224,7 +224,7 @@ defmodule Afp.Factory.Opportunities.RepoContract do
   end
 
   defp upgrade_repo(repo_path, db_path) do
-    with :ok <- Storage.upgrade_schema(db_path),
+    with :ok <- StorageSchema.upgrade_schema(db_path),
          :ok <- ensure_template_files(repo_path, db_path) do
       :ok
     else
@@ -239,15 +239,15 @@ defmodule Afp.Factory.Opportunities.RepoContract do
   end
 
   defp ensure_template_files(repo_path, db_path) do
-    case Storage.stored_template_version(db_path) do
+    case StorageSchema.stored_template_version(db_path) do
       {:ok, version} ->
-        if version >= Storage.template_version() do
+        if version >= StorageSchema.template_version() do
           :ok
         else
-          display_name = Storage.stored_display_name(db_path) || display_name(repo_path)
+          display_name = StorageSchema.stored_display_name(db_path) || display_name(repo_path)
 
           with :ok <- write_template_files(repo_path, display_name) do
-            Storage.record_versions(db_path)
+            StorageSchema.record_versions(db_path)
           end
         end
 

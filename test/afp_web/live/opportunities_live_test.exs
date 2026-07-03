@@ -51,23 +51,23 @@ defmodule AfpWeb.OpportunitiesLiveTest do
       |> render_submit()
 
     [opportunity] = Opportunities.list_opportunities()
-    assert opportunity["status"] == "researched"
+    assert opportunity.status == "researched"
 
     case submit_result do
       {:error, {:live_redirect, %{to: to}}} ->
-        assert to == ~p"/opportunities/#{opportunity["id"]}"
+        assert to == ~p"/opportunities/#{opportunity.id}"
 
       html when is_binary(html) ->
-        assert html =~ opportunity["title"]
+        assert html =~ opportunity.title
     end
 
-    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity.id}")
 
     assert detail_html =~ "Files"
     assert detail_html =~ "README.md"
     assert detail_html =~ "Receipt packet for restaurant shift disputes"
     assert detail_html =~ "Fake Codex completed"
-    assert has_element?(detail_view, "#generate-build-spec-#{opportunity["id"]}")
+    assert has_element?(detail_view, "#generate-build-spec-#{opportunity.id}")
   end
 
   test "creates an opportunity with the Claude Code agent", %{conn: conn} do
@@ -97,10 +97,10 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     |> render_submit()
 
     [opportunity] = Opportunities.list_opportunities()
-    assert opportunity["agent"] == "claude_code"
-    assert opportunity["status"] == "researched"
+    assert opportunity.agent == "claude_code"
+    assert opportunity.status == "researched"
 
-    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, detail_view, detail_html} = live(conn, ~p"/opportunities/#{opportunity.id}")
 
     assert detail_html =~ "Agent Session"
     assert detail_html =~ "Claude Code"
@@ -130,7 +130,7 @@ defmodule AfpWeb.OpportunitiesLiveTest do
             (id, opportunity_id, step_key, title, kind, file_path, why_it_matters,
              source_url, created_at, updated_at)
           VALUES
-            ('ev-live-1', '#{opportunity["id"]}', 'pain_strength',
+            ('ev-live-1', '#{opportunity.id}', 'pain_strength',
              'Top complaint themes', 'source_excerpt',
              'steps/02-pain-strength/top-complaint-themes.md',
              'Backs the repeated-complaint pattern', '',
@@ -140,7 +140,7 @@ defmodule AfpWeb.OpportunitiesLiveTest do
         stderr_to_stdout: true
       )
 
-    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity.id}")
 
     assert html =~ "Top complaint themes"
     assert has_element?(view, "#research-step-pain_strength #step-evidence-ev-live-1")
@@ -156,23 +156,23 @@ defmodule AfpWeb.OpportunitiesLiveTest do
         "agent" => "codex"
       })
 
-    {:ok, view, _html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
-    assert has_element?(view, "#generate-build-spec-#{opportunity["id"]}")
+    {:ok, view, _html} = live(conn, ~p"/opportunities/#{opportunity.id}")
+    assert has_element?(view, "#generate-build-spec-#{opportunity.id}")
 
     view
-    |> element("#generate-build-spec-#{opportunity["id"]}")
+    |> element("#generate-build-spec-#{opportunity.id}")
     |> render_click()
 
     html = render(view)
     assert html =~ "PRD/spec generation launched"
-    refute has_element?(view, "#generate-build-spec-#{opportunity["id"]}")
+    refute has_element?(view, "#generate-build-spec-#{opportunity.id}")
 
-    {:ok, updated} = Opportunities.get_opportunity(opportunity["id"])
-    assert updated["status"] == "build_spec_ready"
+    {:ok, updated} = Opportunities.get_opportunity(opportunity.id)
+    assert updated.status == "build_spec_ready"
 
-    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity["id"])
-    assert build_spec_run["run_type"] == "build_spec"
-    assert initial_run["run_type"] == "initial_research"
+    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity.id)
+    assert build_spec_run.run_type == "build_spec"
+    assert initial_run.run_type == "initial_research"
   end
 
   test "launches with a custom model typed into the free-text field", %{conn: conn} do
@@ -211,8 +211,8 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     |> render_submit()
 
     [opportunity] = Opportunities.list_opportunities()
-    [run] = Opportunities.list_runs(opportunity["id"])
-    assert Jason.decode!(run["payload_json"])["model"] == "gpt-6-experimental"
+    [run] = Opportunities.list_runs(opportunity.id)
+    assert run.model == "gpt-6-experimental"
   end
 
   test "renders live run activity on the detail page", %{conn: conn} do
@@ -225,14 +225,14 @@ defmodule AfpWeb.OpportunitiesLiveTest do
         "agent" => "claude_code"
       })
 
-    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity["id"]}")
+    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity.id}")
     refute html =~ "Live activity"
 
     send(
       view.pid,
       {:opportunity_run_activity,
        %{
-         opportunity_id: opportunity["id"],
+         opportunity_id: opportunity.id,
          run_id: "run-1",
          activity: %{
            "kind" => "tool",

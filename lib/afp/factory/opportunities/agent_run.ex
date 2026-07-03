@@ -27,13 +27,13 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   @skills_path ".skills"
 
   def start_agent_run(repo, opportunity, run, opts) do
-    agent = run["agent"] || @default_agent
+    agent = run.agent || @default_agent
 
     case launch_mode(opts) do
       :sync ->
         case complete_agent_run(repo, opportunity, run, opts) do
           {:ok, completion} ->
-            {:ok, Map.merge(completion, %{opportunity: fetch_opportunity!(opportunity["id"])})}
+            {:ok, Map.merge(completion, %{opportunity: fetch_opportunity!(opportunity.id)})}
 
           {:error, reason} ->
             {:error, reason}
@@ -48,15 +48,15 @@ defmodule Afp.Factory.Opportunities.AgentRun do
           {:ok, %{opportunity: opportunity, run: run, launch_worker_pid: pid}}
         else
           {:error, reason} ->
-            mark_agent_run_failed(repo, opportunity["id"], run, agent, reason)
+            mark_agent_run_failed(repo, opportunity.id, run, agent, reason)
             {:error, reason}
         end
     end
   end
 
   defp complete_agent_run(repo, opportunity, run, opts) do
-    agent = run["agent"] || @default_agent
-    persist_agent_run_started(repo, opportunity["id"], run["id"], agent)
+    agent = run.agent || @default_agent
+    persist_agent_run_started(repo, opportunity.id, run.id, agent)
 
     attrs = agent_launch_attrs(repo, opportunity, run)
 
@@ -64,26 +64,26 @@ defmodule Afp.Factory.Opportunities.AgentRun do
       opts
       |> Keyword.drop([:mode, :supervisor])
       |> Keyword.put(:on_launch_event, fn event, payload ->
-        persist_agent_progress(repo, opportunity["id"], run["id"], agent, event, payload)
+        persist_agent_progress(repo, opportunity.id, run.id, agent, event, payload)
       end)
 
     case launch_client(agent).launch_new_turn(attrs, opts) do
       {:ok, launch_result} ->
-        persist_agent_success(repo, opportunity["id"], run, agent, launch_result)
+        persist_agent_success(repo, opportunity.id, run, agent, launch_result)
 
       {:error, reason} ->
-        mark_agent_run_failed(repo, opportunity["id"], run, agent, reason)
+        mark_agent_run_failed(repo, opportunity.id, run, agent, reason)
         {:error, reason}
     end
   rescue
     exception ->
       reason = {:agent_launch_unhandled_failure, Exception.message(exception)}
-      mark_agent_run_failed(repo, opportunity["id"], run, run["agent"], reason)
+      mark_agent_run_failed(repo, opportunity.id, run, run.agent, reason)
       {:error, reason}
   catch
     kind, reason ->
       failure = {:agent_launch_unhandled_failure, {kind, reason}}
-      mark_agent_run_failed(repo, opportunity["id"], run, run["agent"], failure)
+      mark_agent_run_failed(repo, opportunity.id, run, run.agent, failure)
       {:error, failure}
   end
 
@@ -203,15 +203,15 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   defp persist_agent_progress(_repo, _opportunity_id, _run_id, _agent, _event, _payload), do: :ok
 
   defp persist_agent_success(repo, opportunity_id, run, agent, launch_result) do
-    run_id = run["id"]
-    run_type = run["run_type"] || "initial_research"
+    run_id = run.id
+    run_type = run.run_type || "initial_research"
     now = now_iso()
     thread = get_in(launch_result, [:thread_response, "result", "thread"]) || %{}
     turn = get_in(launch_result, [:turn_response, "result", "turn"]) || %{}
     completed_turn = get_in(launch_result, [:turn_completed, "params", "turn"]) || %{}
     session_id = thread["sessionId"] || thread["id"]
     final_answer = Map.get(launch_result, :final_answer)
-    payload_json = Jason.encode!(agent_payload(agent, run["model"], launch_result, now))
+    payload_json = Jason.encode!(agent_payload(agent, run.model, launch_result, now))
 
     with :ok <- Files.refresh_index(repo, opportunity_id),
          :ok <-
@@ -241,8 +241,8 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   end
 
   defp mark_agent_run_failed(repo, opportunity_id, run, agent, reason) do
-    run_id = run["id"]
-    run_type = run["run_type"] || "initial_research"
+    run_id = run.id
+    run_type = run.run_type || "initial_research"
     error_text = inspect(reason)
 
     Storage.mark_run_failed(
@@ -293,11 +293,11 @@ defmodule Afp.Factory.Opportunities.AgentRun do
 
     %{
       cwd: repo_path,
-      input_text: run["prompt"],
-      model: run["model"],
-      opportunity_id: opportunity["id"],
-      opportunity_run_id: run["id"],
-      client_user_message_id: run["id"],
+      input_text: run.prompt,
+      model: run.model,
+      opportunity_id: opportunity.id,
+      opportunity_run_id: run.id,
+      client_user_message_id: run.id,
       approval_policy: "on-request",
       sandbox_mode: "workspace-write",
       source_repo_root: repo_path,
@@ -357,7 +357,7 @@ defmodule Afp.Factory.Opportunities.AgentRun do
   defp fetch_run!(opportunity_id, run_id) do
     opportunity_id
     |> Opportunities.list_runs()
-    |> Enum.find(&(&1["id"] == run_id))
+    |> Enum.find(&(&1.id == run_id))
   end
 
   defp launch_client("claude_code") do

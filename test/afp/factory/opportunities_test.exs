@@ -81,35 +81,35 @@ defmodule Afp.Factory.OpportunitiesTest do
 
     opportunity = result.opportunity
 
-    assert opportunity["status"] == "researched"
-    assert opportunity["stage"] == "Initial Codex research completed"
-    assert opportunity["codex_session_id"] =~ "fake-session-"
-    assert opportunity["latest_summary"] =~ "Fake Codex completed"
+    assert opportunity.status == "researched"
+    assert opportunity.stage == "Initial Codex research completed"
+    assert opportunity.agent_session_id =~ "fake-session-"
+    assert opportunity.latest_summary =~ "Fake Codex completed"
 
-    opportunity_root = Path.join([path, "opportunities", opportunity["id"]])
+    opportunity_root = Path.join([path, "opportunities", opportunity.id])
     assert File.regular?(Path.join(opportunity_root, "README.md"))
     assert File.dir?(Path.join(opportunity_root, Opportunities.steps_path()))
     refute File.dir?(Path.join(opportunity_root, "generated_other_files"))
 
     assert [listed] = Opportunities.list_opportunities()
-    assert listed["id"] == opportunity["id"]
+    assert listed.id == opportunity.id
 
-    assert [run] = Opportunities.list_runs(opportunity["id"])
-    assert run["status"] == "completed"
-    assert run["codex_session_id"] == opportunity["codex_session_id"]
+    assert [run] = Opportunities.list_runs(opportunity.id)
+    assert run.status == "completed"
+    assert run.agent_session_id == opportunity.agent_session_id
 
-    steps = Opportunities.list_step_results(opportunity["id"])
+    steps = Opportunities.list_step_results(opportunity.id)
     assert length(steps) == 7
-    assert Enum.all?(steps, &(&1["status"] == "pending"))
-    assert Enum.map(steps, & &1["step_index"]) == Enum.to_list(0..6)
-    assert List.first(steps)["step_key"] == "competitor_discovery"
-    assert List.last(steps)["artifact_path"] == "steps/06-score-aggregator.md"
-    assert Enum.all?(steps, &(&1["run_id"] == run["id"]))
+    assert Enum.all?(steps, &(&1.status == "pending"))
+    assert Enum.map(steps, & &1.step_index) == Enum.to_list(0..6)
+    assert List.first(steps).step_key == "competitor_discovery"
+    assert List.last(steps).artifact_path == "steps/06-score-aggregator.md"
+    assert Enum.all?(steps, &(&1.run_id == run.id))
 
-    assert {:ok, files} = Opportunities.list_opportunity_files(opportunity["id"])
+    assert {:ok, files} = Opportunities.list_opportunity_files(opportunity.id)
     assert Enum.any?(files, &(&1.relative_path == "README.md"))
 
-    assert {:ok, file} = Opportunities.read_opportunity_file(opportunity["id"], "README.md")
+    assert {:ok, file} = Opportunities.read_opportunity_file(opportunity.id, "README.md")
     assert file.type == "markdown"
     assert file.content =~ "Receipt packet for restaurant shift disputes"
   end
@@ -134,23 +134,23 @@ defmodule Afp.Factory.OpportunitiesTest do
                        activity: %{"kind" => "tool", "agent" => "claude_code"}
                      }}
 
-    assert activity_opportunity_id == opportunity["id"]
+    assert activity_opportunity_id == opportunity.id
 
     assert_received {:opportunity_run_activity,
                      %{activity: %{"kind" => "message", "text" => text}}}
 
     assert text =~ "Fake Claude Code analyzing"
 
-    assert opportunity["agent"] == "claude_code"
-    assert opportunity["status"] == "researched"
-    assert opportunity["stage"] == "Initial Claude Code research completed"
-    assert opportunity["codex_session_id"] =~ "fake-claude-session-"
-    assert opportunity["latest_summary"] =~ "Fake Claude Code completed"
+    assert opportunity.agent == "claude_code"
+    assert opportunity.status == "researched"
+    assert opportunity.stage == "Initial Claude Code research completed"
+    assert opportunity.agent_session_id =~ "fake-claude-session-"
+    assert opportunity.latest_summary =~ "Fake Claude Code completed"
 
-    assert [run] = Opportunities.list_runs(opportunity["id"])
-    assert run["agent"] == "claude_code"
-    assert run["status"] == "completed"
-    assert run["codex_session_id"] == opportunity["codex_session_id"]
+    assert [run] = Opportunities.list_runs(opportunity.id)
+    assert run.agent == "claude_code"
+    assert run.status == "completed"
+    assert run.agent_session_id == opportunity.agent_session_id
   end
 
   test "create_opportunity records the requested model override in the run payload" do
@@ -164,9 +164,9 @@ defmodule Afp.Factory.OpportunitiesTest do
                "model" => "claude-opus-4-8"
              })
 
-    assert [run] = Opportunities.list_runs(result.opportunity["id"])
-    assert run["status"] == "completed"
-    assert Jason.decode!(run["payload_json"])["model"] == "claude-opus-4-8"
+    assert [run] = Opportunities.list_runs(result.opportunity.id)
+    assert run.status == "completed"
+    assert run.model == "claude-opus-4-8"
 
     assert {:ok, no_model_result} =
              Opportunities.create_opportunity(%{
@@ -174,8 +174,8 @@ defmodule Afp.Factory.OpportunitiesTest do
                "model" => "   "
              })
 
-    assert [no_model_run] = Opportunities.list_runs(no_model_result.opportunity["id"])
-    assert Jason.decode!(no_model_run["payload_json"])["model"] == nil
+    assert [no_model_run] = Opportunities.list_runs(no_model_result.opportunity.id)
+    assert no_model_run.model == nil
   end
 
   test "generate_build_spec launches a post-research PRD spec run" do
@@ -190,20 +190,20 @@ defmodule Afp.Factory.OpportunitiesTest do
              })
 
     opportunity = initial.opportunity
-    assert opportunity["status"] == "researched"
+    assert opportunity.status == "researched"
 
-    assert {:ok, result} = Opportunities.generate_build_spec(opportunity["id"])
+    assert {:ok, result} = Opportunities.generate_build_spec(opportunity.id)
 
-    assert result.opportunity["status"] == "build_spec_ready"
-    assert result.opportunity["stage"] == "Build spec PRD completed"
+    assert result.opportunity.status == "build_spec_ready"
+    assert result.opportunity.stage == "Build spec PRD completed"
 
-    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity["id"])
-    assert build_spec_run["run_type"] == "build_spec"
-    assert build_spec_run["agent"] == "claude_code"
-    assert Jason.decode!(build_spec_run["payload_json"])["model"] == "claude-opus-4-8"
-    assert build_spec_run["prompt"] =~ ".skills/opportunity-to-buildspec/SKILL.md"
-    assert build_spec_run["prompt"] =~ "opportunities/#{opportunity["id"]}/spec"
-    assert initial_run["run_type"] == "initial_research"
+    assert [build_spec_run, initial_run] = Opportunities.list_runs(opportunity.id)
+    assert build_spec_run.run_type == "build_spec"
+    assert build_spec_run.agent == "claude_code"
+    assert build_spec_run.model == "claude-opus-4-8"
+    assert build_spec_run.prompt =~ ".skills/opportunity-to-buildspec/SKILL.md"
+    assert build_spec_run.prompt =~ "opportunities/#{opportunity.id}/spec"
+    assert initial_run.run_type == "initial_research"
   end
 
   test "generate_build_spec only accepts researched opportunities" do
@@ -215,10 +215,10 @@ defmodule Afp.Factory.OpportunitiesTest do
                "raw_input" => "Receipt packet for shift disputes"
              })
 
-    assert {:ok, _result} = Opportunities.generate_build_spec(opportunity["id"])
+    assert {:ok, _result} = Opportunities.generate_build_spec(opportunity.id)
 
     assert {:error, :opportunity_not_researched} =
-             Opportunities.generate_build_spec(opportunity["id"])
+             Opportunities.generate_build_spec(opportunity.id)
   end
 
   test "create_opportunity rejects unsupported agents" do
@@ -303,8 +303,8 @@ defmodule Afp.Factory.OpportunitiesTest do
                "agent" => "claude_code"
              })
 
-    assert result.opportunity["agent"] == "claude_code"
-    assert length(Opportunities.list_step_results(result.opportunity["id"])) == 7
+    assert result.opportunity.agent == "claude_code"
+    assert length(Opportunities.list_step_results(result.opportunity.id)) == 7
   end
 
   test "list_step_evidence returns registered evidence files" do
@@ -314,7 +314,7 @@ defmodule Afp.Factory.OpportunitiesTest do
     {:ok, %{opportunity: opportunity}} =
       Opportunities.create_opportunity(%{"raw_input" => "Receipt packet for shift disputes"})
 
-    assert Opportunities.list_step_evidence(opportunity["id"]) == []
+    assert Opportunities.list_step_evidence(opportunity.id) == []
 
     {_output, 0} =
       System.cmd(
@@ -326,7 +326,7 @@ defmodule Afp.Factory.OpportunitiesTest do
             (id, opportunity_id, step_key, title, kind, file_path, why_it_matters,
              source_url, created_at, updated_at)
           VALUES
-            ('ev-1', '#{opportunity["id"]}', 'competitor_discovery',
+            ('ev-1', '#{opportunity.id}', 'competitor_discovery',
              'Competitor A app store listing', 'screenshot',
              'steps/00-competitor-discovery/competitor-a-app-store.png',
              'Anchors competitor A pricing and rating claims',
@@ -336,9 +336,9 @@ defmodule Afp.Factory.OpportunitiesTest do
         stderr_to_stdout: true
       )
 
-    assert [evidence] = Opportunities.list_step_evidence(opportunity["id"])
-    assert evidence["step_key"] == "competitor_discovery"
-    assert evidence["kind"] == "screenshot"
-    assert evidence["file_path"] == "steps/00-competitor-discovery/competitor-a-app-store.png"
+    assert [evidence] = Opportunities.list_step_evidence(opportunity.id)
+    assert evidence.step_key == "competitor_discovery"
+    assert evidence.kind == "screenshot"
+    assert evidence.file_path == "steps/00-competitor-discovery/competitor-a-app-store.png"
   end
 end

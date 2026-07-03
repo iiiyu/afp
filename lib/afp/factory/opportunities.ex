@@ -6,6 +6,7 @@ defmodule Afp.Factory.Opportunities do
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities.AgentRun
   alias Afp.Factory.Opportunities.Files
+  alias Afp.Factory.Opportunities.Opportunity
   alias Afp.Factory.Opportunities.RepoContract
   alias Afp.Factory.Opportunities.Storage
   alias Afp.Factory.Settings
@@ -185,8 +186,8 @@ defmodule Afp.Factory.Opportunities do
   def relaunch_opportunity(opportunity_id, opts \\ []) do
     with {:ok, repo} <- healthy_repo(),
          {:ok, opportunity} <- get_opportunity(opportunity_id),
-         {:ok, raw_input} <- raw_input(opportunity) do
-      agent = opportunity["agent"] || @default_agent
+         {:ok, raw_input} <- opportunity_raw_input(opportunity) do
+      agent = opportunity.agent || @default_agent
       model = latest_run_model(opportunity_id)
 
       with {:ok, run} <- create_opportunity_run(repo, opportunity, raw_input, agent, model) do
@@ -208,7 +209,7 @@ defmodule Afp.Factory.Opportunities do
     with {:ok, repo} <- healthy_repo(),
          {:ok, opportunity} <- get_opportunity(opportunity_id),
          :ok <- ensure_researched(opportunity) do
-      agent = opportunity["agent"] || @default_agent
+      agent = opportunity.agent || @default_agent
       model = latest_run_model(opportunity_id)
 
       with {:ok, run} <- create_build_spec_run(repo, opportunity, agent, model) do
@@ -225,19 +226,10 @@ defmodule Afp.Factory.Opportunities do
     opportunity_id
     |> list_runs()
     |> case do
-      [latest | _] -> run_model(latest)
+      [latest | _] -> latest.model
       _ -> nil
     end
   end
-
-  defp run_model(%{"payload_json" => json}) when is_binary(json) do
-    case Jason.decode(json) do
-      {:ok, %{"model" => model}} when is_binary(model) and model != "" -> model
-      _ -> nil
-    end
-  end
-
-  defp run_model(_run), do: nil
 
   def supported_agents, do: @agents
 
@@ -344,6 +336,10 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
+  @doc "True when the record's agent run is currently executing."
+  def running?(%Opportunity{} = opportunity), do: Opportunity.running?(opportunity)
+  def running?(%Afp.Factory.Opportunities.Run{} = run), do: run.status == "running"
+
   defp write_opportunity_files(repo, opportunity_id, title, raw_input) do
     root = Path.join([repo["repo_path"], @opportunities_path, opportunity_id])
 
@@ -364,21 +360,15 @@ defmodule Afp.Factory.Opportunities do
     with {:ok, run} <-
            Storage.insert_initial_run(repo, %{
              id: run_id,
-             opportunity_id: opportunity["id"],
+             opportunity_id: opportunity.id,
              agent: agent,
              model: model,
              prompt: prompt,
              stage: "#{agent_label(agent)} launch queued",
              steps: @research_steps
            }) do
-      run = %{
-        run
-        | "id" => run_id,
-          "prompt" => prompt
-      }
-
       Events.record_event("opportunity_run", run_id, "opportunity_run_queued", %{
-        opportunity_id: opportunity["id"],
+        opportunity_id: opportunity.id,
         agent: agent,
         model: model
       })
@@ -394,20 +384,14 @@ defmodule Afp.Factory.Opportunities do
     with {:ok, run} <-
            Storage.insert_build_spec_run(repo, %{
              id: run_id,
-             opportunity_id: opportunity["id"],
+             opportunity_id: opportunity.id,
              agent: agent,
              model: model,
              prompt: prompt,
              stage: "#{agent_label(agent)} build-spec launch queued"
            }) do
-      run = %{
-        run
-        | "id" => run_id,
-          "prompt" => prompt
-      }
-
       Events.record_event("opportunity_run", run_id, "opportunity_build_spec_queued", %{
-        opportunity_id: opportunity["id"],
+        opportunity_id: opportunity.id,
         agent: agent,
         model: model
       })
@@ -416,8 +400,15 @@ defmodule Afp.Factory.Opportunities do
     end
   end
 
-  defp ensure_researched(%{"status" => "researched"}), do: :ok
+  defp ensure_researched(%Opportunity{status: "researched"}), do: :ok
   defp ensure_researched(_opportunity), do: {:error, :opportunity_not_researched}
+
+  defp opportunity_raw_input(%Opportunity{raw_input: raw_input}) do
+    case Factory.trim_nil(raw_input) do
+      nil -> {:error, :raw_input_required}
+      raw_input -> {:ok, raw_input}
+    end
+  end
 
   defp raw_input(attrs) do
     case attrs |> attr_value("raw_input") |> Factory.trim_nil() do
@@ -501,14 +492,14 @@ defmodule Afp.Factory.Opportunities do
   end
 
   defp agent_prompt(repo, opportunity, run_id, raw_input) do
-    relative_root = opportunity_relative_root(opportunity["id"])
+    relative_root = opportunity_relative_root(opportunity.id)
 
     """
     You are working inside an AFP opportunity repo.
 
     Read `AGENTS.md` first, then execute the seven-step research pipeline it declares for this opportunity, in order, using the step skills under `#{@skills_path}/`.
 
-    OPPORTUNITY_ID: #{opportunity["id"]}
+    OPPORTUNITY_ID: #{opportunity.id}
     OPPORTUNITY_RUN_ID: #{run_id}
     OPPORTUNITY_DIR: #{relative_root}
     BASE_SQLITE: #{@base_sqlite_path}
@@ -531,7 +522,7 @@ defmodule Afp.Factory.Opportunities do
   end
 
   defp build_spec_prompt(repo, opportunity, run_id) do
-    relative_root = opportunity_relative_root(opportunity["id"])
+    relative_root = opportunity_relative_root(opportunity.id)
     spec_root = Path.join(relative_root, @build_spec_path)
 
     """
@@ -539,7 +530,7 @@ defmodule Afp.Factory.Opportunities do
 
     Read `AGENTS.md` first, then read `.skills/opportunity-to-buildspec/SKILL.md` and its referenced `references/spec-package-template.md`.
 
-    OPPORTUNITY_ID: #{opportunity["id"]}
+    OPPORTUNITY_ID: #{opportunity.id}
     OPPORTUNITY_RUN_ID: #{run_id}
     OPPORTUNITY_DIR: #{relative_root}
     SPEC_DIR: #{spec_root}
