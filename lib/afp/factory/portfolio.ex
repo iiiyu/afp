@@ -47,22 +47,37 @@ defmodule Afp.Factory.Portfolio do
     App.changeset(app, attrs)
   end
 
-  def create_app(attrs) do
+  def create_app(attrs, opts \\ []) do
     attrs = Map.put_new(attrs, "last_activity_at", Factory.now())
 
     %App{}
     |> App.changeset(attrs)
+    |> put_computed_health(opts)
     |> Repo.insert()
     |> after_write("app_created")
   end
 
-  def update_app(%App{} = app, attrs) do
+  def update_app(%App{} = app, attrs, opts \\ []) do
     attrs = Map.put(attrs, "last_activity_at", Factory.now())
 
     app
     |> App.changeset(attrs)
+    |> put_computed_health(opts)
     |> Repo.update()
     |> after_write("app_updated")
+  end
+
+  # Health is derived at write time through an injected repo inspector — the
+  # changeset itself stays a pure function of attrs (no filesystem access when
+  # building forms or validating).
+  defp put_computed_health(changeset, opts) do
+    repo_exists? = Keyword.get(opts, :repo_exists?, &File.dir?/1)
+
+    Ecto.Changeset.put_change(
+      changeset,
+      :health_state,
+      App.computed_health_state(changeset, repo_exists?)
+    )
   end
 
   def update_next_action(%App{} = app, next_action) do

@@ -56,8 +56,8 @@ defmodule Afp.Factory.Portfolio.App do
     ])
     |> put_default(:lifecycle_stage, "idea")
     |> put_default(:business_posture, "unknown")
+    |> put_default(:health_state, "unknown")
     |> put_slug()
-    |> put_health_state()
     |> validate_required([:name, :slug, :lifecycle_stage, :business_posture, :health_state])
     |> validate_inclusion(:lifecycle_stage, Factory.lifecycle_stages())
     |> validate_inclusion(:business_posture, Factory.business_postures())
@@ -146,11 +146,12 @@ defmodule Afp.Factory.Portfolio.App do
     end
   end
 
-  defp put_health_state(changeset) do
-    put_change(changeset, :health_state, computed_health_state(changeset))
-  end
-
-  defp computed_health_state(changeset) do
+  @doc """
+  Pure health computation over a changeset's effective fields. The repo
+  inspector is injected (`Portfolio` passes `File.dir?/1`); the changeset
+  itself never touches the filesystem.
+  """
+  def computed_health_state(changeset, repo_exists?) when is_function(repo_exists?, 1) do
     lifecycle_stage = get_field(changeset, :lifecycle_stage)
     repo_path = get_field(changeset, :repo_path)
     next_action = get_field(changeset, :next_action)
@@ -160,7 +161,7 @@ defmodule Afp.Factory.Portfolio.App do
       archived_at != nil or lifecycle_stage == "archived" ->
         "archived"
 
-      Factory.present?(repo_path) and not File.dir?(Factory.expand_path(repo_path)) ->
+      Factory.present?(repo_path) and not repo_exists?.(Factory.expand_path(repo_path)) ->
         "repo_missing"
 
       lifecycle_stage not in ["idea", "paused", "archived"] and Factory.blank?(next_action) ->
