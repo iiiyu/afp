@@ -1,20 +1,30 @@
-# @input  - App id, lifecycle/posture transition params, and next-action edits
-# @output - Single-app detail LiveView
-# @pos    - App record surface: identity, state transitions, and event history
+# @input  - App id, transition/build-launch params, and build run activity
+# @output - App repo detail LiveView: identity, build runs, transitions, history
+# @pos    - The per-app repo detail surface (BuildRunner v2 lives here)
 defmodule AfpWeb.AppLive.Show do
   use AfpWeb, :live_view
 
+  import AfpWeb.AppLive.BuildComponents
+
   alias Afp.Factory
+  alias Afp.Factory.Builds
   alias Afp.Factory.Events
+  alias Afp.Factory.Opportunities.ActivityFeed
   alias Afp.Factory.Portfolio
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    if connected?(socket), do: Events.subscribe()
+    if connected?(socket) do
+      Events.subscribe()
+      Events.subscribe_build_activity()
+    end
 
     {:ok,
      socket
      |> assign(:app_id, id)
+     |> assign(:run_activity, [])
+     |> assign(:selected_report_name, nil)
+     |> assign(:selected_report, nil)
      |> load_app()}
   end
 
@@ -46,10 +56,103 @@ defmodule AfpWeb.AppLive.Show do
     respond_transition(result, socket, "Next action updated.")
   end
 
+  def handle_event("launch_milestone", %{"key" => milestone_key}, socket) do
+    socket.assigns.app
+    |> Builds.launch_milestone(milestone_key)
+    |> respond_launch(socket, "Agent launched against #{milestone_key}.")
+  end
+
+  def handle_event("launch_task", %{"task" => %{"task_text" => task_text}}, socket) do
+    socket.assigns.app
+    |> Builds.launch_task(task_text)
+    |> respond_launch(socket, "Agent launched on the ad-hoc task.")
+  end
+
+  def handle_event("mark_run_reviewed", %{"run-id" => run_id}, socket) do
+    socket.assigns.app
+    |> Builds.mark_run_reviewed(run_id)
+    |> respond_launch(socket, "Run marked reviewed — the gate is open.")
+  end
+
+  def handle_event("force_fail_run", %{"run-id" => run_id}, socket) do
+    socket.assigns.app
+    |> Builds.force_fail_run(run_id)
+    |> respond_launch(socket, "Run force-failed.")
+  end
+
+  def handle_event("select_report", %{"name" => name}, socket) do
+    case Builds.read_report_file(socket.assigns.app, name) do
+      {:ok, content} ->
+        {:noreply,
+         socket
+         |> assign(:selected_report_name, name)
+         |> assign(:selected_report, content)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not read report #{name}.")}
+    end
+  end
+
   @impl true
   def handle_info({:factory_event, _event}, socket) do
     {:noreply, load_app(socket)}
   end
+
+  def handle_info({:build_run_activity, %{app_id: app_id} = message}, socket) do
+    if app_id == socket.assigns.app.id do
+      {:noreply,
+       socket
+       |> assign(
+         :run_activity,
+         ActivityFeed.append(socket.assigns.run_activity, message.activity)
+       )
+       |> maybe_refresh_app()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp maybe_refresh_app(socket) do
+    now = System.monotonic_time(:millisecond)
+
+    if ActivityFeed.refresh_due?(socket.assigns[:last_refresh_at], now) do
+      socket
+      |> assign(:last_refresh_at, now)
+      |> load_app()
+    else
+      socket
+    end
+  end
+
+  defp respond_launch(result, socket, success_message) do
+    case result do
+      {:ok, _run} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, success_message)
+         |> load_app()}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, launch_error(reason))
+         |> load_app()}
+    end
+  end
+
+  defp launch_error({:repo_unhealthy, state, _notes}), do: "App repo is not healthy: #{state}."
+  defp launch_error({:active_run, _id}), do: "A run is already in flight for this app."
+
+  defp launch_error({:unreviewed_run, _id}),
+    do: "Review gate: mark the completed run reviewed first."
+
+  defp launch_error({:milestone_not_launchable, status}),
+    do: "Milestone is #{status}; only pending/failed/blocked milestones launch."
+
+  defp launch_error(:milestone_not_found), do: "Milestone not found in the repo state db."
+  defp launch_error(:task_text_required), do: "Task text is required."
+  defp launch_error({:build_run_failed, _id}), do: "Run failed — see the run entry for details."
+  defp launch_error(reason), do: "Launch failed: #{inspect(reason)}"
 
   defp respond_transition(result, socket, success_message) do
     case result do
@@ -66,14 +169,24 @@ defmodule AfpWeb.AppLive.Show do
 
   defp load_app(socket) do
     app = Portfolio.get_app!(socket.assigns.app_id)
+    repo_health = if app.repo_path, do: Builds.inspect_app_repo(app.repo_path)
+    healthy? = match?(%{health_state: "healthy"}, repo_health)
+
+    if healthy?, do: Builds.reconcile_stale_runs(app)
 
     socket
     |> assign(:app, app)
     |> assign(:page_title, app.name)
+    |> assign(:repo_health, repo_health)
+    |> assign(:milestones, if(healthy?, do: Builds.list_milestones(app), else: []))
+    |> assign(:runs, if(healthy?, do: Builds.list_runs(app), else: []))
+    |> assign(:launch_blocked, if(healthy?, do: Builds.launch_blocked(app)))
+    |> assign(:report_files, if(healthy?, do: Builds.list_report_files(app), else: []))
     |> assign(:events, Events.list_subject_events("app", app.id))
     |> assign(:next_action_form, to_form(%{"next_action" => app.next_action}, as: :app))
     |> assign(:lifecycle_form, to_form(%{}, as: :lifecycle))
     |> assign(:posture_form, to_form(%{}, as: :posture))
+    |> assign(:task_form, to_form(%{}, as: :task))
   end
 
   defp thesis_entries(thesis) when is_map(thesis) do
@@ -153,6 +266,21 @@ defmodule AfpWeb.AppLive.Show do
                 </div>
               </div>
             </.panel>
+
+            <.build_panel
+              repo_health={@repo_health}
+              milestones={@milestones}
+              launch_blocked={@launch_blocked}
+              task_form={@task_form}
+            />
+
+            <.runs_panel runs={@runs} run_activity={@run_activity} />
+
+            <.reports_panel
+              report_files={@report_files}
+              selected_report_name={@selected_report_name}
+              selected_report={@selected_report}
+            />
 
             <.panel title="Event history">
               <:subtitle>Append-only audit log for this app.</:subtitle>
