@@ -163,6 +163,90 @@ defmodule Afp.Factory.BuildsTest do
     end
   end
 
+  describe "promote_opportunity/3" do
+    setup do
+      repo_path = unique_repo_path()
+
+      {:ok, _repo} =
+        Afp.Factory.Opportunities.create_repo_from_template(%{"repo_path" => repo_path})
+
+      {:ok, %{opportunity: opportunity}} =
+        Afp.Factory.Opportunities.create_opportunity(%{"raw_input" => "Sparkle camera wedge"})
+
+      base = Path.join(repo_path, "base.sqlite")
+
+      :ok =
+        RepoSqlite.execute(base, """
+        UPDATE opportunities SET status = 'build_spec_ready'
+        WHERE id = #{RepoSqlite.escape(opportunity.id)};
+        """)
+
+      spec_dir = Path.join([repo_path, "opportunities", opportunity.id, "spec"])
+      File.mkdir_p!(spec_dir)
+      File.write!(Path.join(spec_dir, "00-goal.md"), "# Goal")
+
+      %{opportunity: opportunity, template: fake_template!(), target: unique_target()}
+    end
+
+    test "creates the app repo from the template with the spec package", ctx do
+      assert {:ok, app} =
+               Builds.promote_opportunity(
+                 ctx.opportunity.id,
+                 %{"name" => "Glint", "repo_path" => ctx.target},
+                 template_path: ctx.template
+               )
+
+      assert app.name == "Glint"
+      assert app.repo_path == ctx.target
+      assert app.lifecycle_stage == "build_ready"
+
+      assert File.dir?(Path.join(ctx.target, ".git"))
+      assert File.exists?(Path.join(ctx.target, "spec/00-goal.md"))
+      refute File.exists?(Path.join(ctx.target, "ignored-noise.txt"))
+
+      manifest = ctx.target |> Path.join("afp/manifest.json") |> File.read!() |> Jason.decode!()
+      assert get_in(manifest, ["app", "display_name"]) == "Glint"
+
+      assert %{health_state: "healthy"} = Builds.inspect_app_repo(ctx.target)
+      assert Builds.list_runs(app) == []
+
+      assert {:ok, promoted} = Afp.Factory.Opportunities.get_opportunity(ctx.opportunity.id)
+      assert promoted.status == "promoted"
+      assert promoted.stage =~ "Glint"
+    end
+
+    test "refuses re-promotion and wrong statuses", ctx do
+      assert {:ok, _app} =
+               Builds.promote_opportunity(
+                 ctx.opportunity.id,
+                 %{"name" => "Glint", "repo_path" => ctx.target},
+                 template_path: ctx.template
+               )
+
+      assert {:error, :already_promoted} =
+               Builds.promote_opportunity(
+                 ctx.opportunity.id,
+                 %{"name" => "Other", "repo_path" => unique_target()},
+                 template_path: ctx.template
+               )
+    end
+
+    test "refuses non-empty targets and missing inputs", ctx do
+      File.mkdir_p!(ctx.target)
+      File.write!(Path.join(ctx.target, "existing.txt"), "x")
+
+      assert {:error, :target_not_empty} =
+               Builds.promote_opportunity(
+                 ctx.opportunity.id,
+                 %{"name" => "Glint", "repo_path" => ctx.target},
+                 template_path: ctx.template
+               )
+
+      assert {:error, :app_name_required} =
+               Builds.promote_opportunity(ctx.opportunity.id, %{"repo_path" => unique_target()})
+    end
+  end
+
   describe "report files" do
     test "lists and reads only safe markdown names" do
       app = build_app!()
@@ -175,6 +259,34 @@ defmodule Afp.Factory.BuildsTest do
       assert {:error, :invalid_report_name} = Builds.read_report_file(app, "../secrets.md")
       assert {:error, :invalid_report_name} = Builds.read_report_file(app, "verify.sh")
     end
+  end
+
+  # A minimal git-committed template standing in for afp-app-template. The
+  # uncommitted ignored-noise file proves the git-archive export stays clean.
+  defp fake_template!() do
+    path =
+      temp_git_repo_fixture(%{
+        "AGENTS.md" => "# App Repo Agent Instructions\n",
+        "Scripts/verify.sh" => "#!/bin/sh\nexit 0\n",
+        "afp/manifest.json" =>
+          Jason.encode!(%{
+            "contract" => "afp-app-repo/v1",
+            "app" => %{"display_name" => "FactoryDemo", "bundle_id" => "demo"},
+            "state_db" => "afp/state.sqlite",
+            "spec_dir" => "spec",
+            "verify" => %{
+              "entrypoint" => "Scripts/verify.sh",
+              "report" => "afp/artifacts/verify.json"
+            }
+          })
+      })
+
+    File.write!(Path.join(path, "ignored-noise.txt"), "should not be exported")
+    path
+  end
+
+  defp unique_target do
+    Path.join(System.tmp_dir!(), "afp-promoted-#{System.unique_integer([:positive])}")
   end
 
   defp build_app!(opts \\ []) do

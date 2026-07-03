@@ -355,6 +355,21 @@ defmodule Afp.Factory.Opportunities do
   def running?(%Opportunity{} = opportunity), do: Opportunity.running?(opportunity)
   def running?(%Afp.Factory.Opportunities.Run{} = run), do: run.status == "running"
 
+  @doc "Absolute path of the opportunity's generated spec package, if present."
+  def spec_package_path(opportunity_id) do
+    with {:ok, repo} <- healthy_repo() do
+      path = Path.join([repo["repo_path"], @opportunities_path, opportunity_id, @build_spec_path])
+      if File.dir?(path), do: {:ok, path}, else: {:error, :spec_package_missing}
+    end
+  end
+
+  @doc "Marks an opportunity promoted into an app (repo-local status update)."
+  def mark_promoted(opportunity_id, app_name) do
+    with {:ok, repo} <- healthy_repo() do
+      Storage.mark_opportunity_promoted(repo, opportunity_id, app_name)
+    end
+  end
+
   defp write_opportunity_files(repo, opportunity_id, title, raw_input) do
     root = Path.join([repo["repo_path"], @opportunities_path, opportunity_id])
 

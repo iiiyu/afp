@@ -299,6 +299,21 @@ defmodule Afp.Factory.Opportunities.Storage do
     )
   end
 
+  def mark_opportunity_promoted(repo, opportunity_id, app_name) do
+    now = now_iso()
+
+    sqlite_exec(
+      repo,
+      """
+      UPDATE opportunities
+      SET status = 'promoted',
+          stage = #{sql_value("Promoted to app #{app_name}")},
+          updated_at = #{sql_value(now)}
+      WHERE id = #{sql_value(opportunity_id)};
+      """
+    )
+  end
+
   defp queued_run(run_id, attrs, run_type, payload, now) do
     %Run{
       id: run_id,

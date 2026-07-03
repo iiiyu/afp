@@ -20,6 +20,7 @@ defmodule AfpWeb.OpportunitiesLive.DetailComponents do
   attr :selected_file_path, :string, default: nil
   attr :selected_file, :any, default: nil
   attr :run_activity, :list, required: true
+  attr :promote_form, Phoenix.HTML.Form, required: true
 
   def opportunity_detail(assigns) do
     ~H"""
@@ -79,6 +80,42 @@ defmodule AfpWeb.OpportunitiesLive.DetailComponents do
               <.icon name="hero-document-plus" class="size-4" /> Generate PRD spec
             </.button>
           </div>
+          <div
+            :if={@opportunity.status == "build_spec_ready" && is_nil(@active_run)}
+            class="rounded border border-emerald-300 bg-emerald-50/50 p-3 dark:border-emerald-800 dark:bg-emerald-950/40 lg:col-span-2"
+          >
+            <div class="mb-2 text-sm font-semibold text-slate-950 dark:text-white">
+              Promote to App
+            </div>
+            <p class="mb-2 text-xs text-slate-600 dark:text-slate-300">
+              Creates a new app repo from the golden template, copies the spec
+              package into it, and registers the app — the build continues on
+              the app's detail page.
+            </p>
+            <.form
+              for={@promote_form}
+              id="promote-opportunity-form"
+              phx-submit="promote_opportunity"
+              class="space-y-2"
+            >
+              <.input field={@promote_form[:name]} label="App name" required />
+              <.input
+                field={@promote_form[:repo_path]}
+                label="New repo path"
+                required
+                placeholder="/Users/ewan/Developer/Apps/MyApp"
+              />
+              <.button type="submit" variant="primary">
+                <.icon name="hero-rocket-launch" class="size-4" /> Create app repo
+              </.button>
+            </.form>
+          </div>
+          <p
+            :if={@opportunity.status == "promoted"}
+            class="text-sm text-emerald-700 dark:text-emerald-300 lg:col-span-2"
+          >
+            Promoted to an app — continue on its <.link navigate={~p"/apps"} class="underline">Apps detail page</.link>.
+          </p>
         </div>
       </.panel>
 

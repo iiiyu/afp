@@ -75,7 +75,9 @@ agent-ready product package under `opportunities/[uuid]/spec/`.
 Build-spec runs do not rerun scoring, create app repositories, promote
 opportunities, or modify the step result rows. A successful build-spec run moves
 the opportunity to `build_spec_ready`; a failed build-spec run leaves the
-opportunity `researched` so the operator can retry.
+opportunity `researched` so the operator can retry. Promoting a
+`build_spec_ready` opportunity into an app (AFP's promote action) sets its
+status to `promoted` — a terminal state for the research pipeline.
 
 ## Evidence Materials
 

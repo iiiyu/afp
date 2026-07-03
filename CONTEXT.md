@@ -17,6 +17,10 @@ exactly; synonyms listed as *avoid* are banned in code, docs, and issues.
   `docs/opportunities-repo-contract.md`. AFP stores only its path.
 - **Build Spec** — the PRD/spec package generated under
   `opportunities/<id>/spec/` after research completes.
+- **Promote** — the deterministic opportunity→app hand-off: a
+  `build_spec_ready` opportunity becomes a new app repo (template export +
+  spec package) plus a Portfolio app record; the opportunity's status becomes
+  `promoted`. *Avoid: convert, graduate, hand off.*
 
 ## Portfolio (Apps)
 

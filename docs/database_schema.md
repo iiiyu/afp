@@ -84,7 +84,7 @@ writes them through `Factory.RepoSqlite`; no PostgreSQL tables are involved.
 - Opportunity repo health: `healthy`, `missing`, `sqlite_missing`,
   `sqlite_invalid`, `agents_missing`, `invalid_structure`.
 - Opportunity status in `base.sqlite`: `captured`, `queued`, `running`,
-  `researched`, `build_spec_ready`, `failed`.
+  `researched`, `build_spec_ready`, `promoted`, `failed`.
 - Opportunity run type in `base.sqlite`: `initial_research`, `build_spec`.
 - Opportunity run status in `base.sqlite`: `queued`, `running`, `completed`,
   `failed`.

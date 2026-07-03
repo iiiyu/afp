@@ -7,6 +7,7 @@ defmodule AfpWeb.OpportunitiesLive do
   import AfpWeb.OpportunitiesLive.Components
   import AfpWeb.OpportunitiesLive.DetailComponents
 
+  alias Afp.Factory.Builds
   alias Afp.Factory.Events
   alias Afp.Factory.Opportunities
   alias Afp.Factory.Opportunities.ActivityFeed
@@ -189,6 +190,24 @@ defmodule AfpWeb.OpportunitiesLive do
     end
   end
 
+  def handle_event("promote_opportunity", %{"promote" => params}, socket) do
+    opportunity = socket.assigns.selected_opportunity
+
+    case Builds.promote_opportunity(opportunity.id, params) do
+      {:ok, app} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "App repo created from the template — continue the build here.")
+         |> push_navigate(to: ~p"/apps/#{app.id}")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, promote_error(reason))
+         |> load_opportunities(current_params(socket))}
+    end
+  end
+
   def handle_event("select_file", %{"path" => path}, socket) do
     case socket.assigns.selected_opportunity do
       nil ->
@@ -235,6 +254,7 @@ defmodule AfpWeb.OpportunitiesLive do
         |> assign(:step_results, step_results_for(id))
         |> assign(:step_evidence, step_evidence_for(id))
         |> assign(:active_run, Enum.find(runs, &Opportunities.running?/1))
+        |> assign(:promote_form, promote_form(opportunity))
         |> assign_selected_file(id, selected_path)
 
       {:error, _reason} ->
@@ -369,6 +389,38 @@ defmodule AfpWeb.OpportunitiesLive do
 
   defp launch_error(reason), do: "Could not launch opportunity: #{inspect(reason)}"
 
+  defp promote_form(opportunity) do
+    to_form(%{"name" => String.slice(opportunity.title || "", 0, 60), "repo_path" => ""},
+      as: :promote
+    )
+  end
+
+  defp promote_error(:app_name_required), do: "App name is required."
+  defp promote_error(:repo_path_required), do: "New repo path is required."
+  defp promote_error(:already_promoted), do: "This opportunity was already promoted."
+
+  defp promote_error({:not_build_spec_ready, status}),
+    do: "Opportunity must be build_spec_ready (currently #{status})."
+
+  defp promote_error(:spec_package_missing),
+    do: "No spec package found under the opportunity's spec/ directory."
+
+  defp promote_error(:target_not_empty), do: "Target directory is not empty."
+
+  defp promote_error({:template_not_a_git_repo, path}),
+    do: "App template is not a git repo: #{path}."
+
+  defp promote_error({:template_export_failed, output}),
+    do: "Template export failed: #{output}"
+
+  defp promote_error(%Ecto.Changeset{} = changeset) do
+    if changeset.errors[:repo_path],
+      do: "An app already uses that repository path.",
+      else: "Could not create the app record: #{inspect(changeset.errors)}"
+  end
+
+  defp promote_error(reason), do: "Could not promote: #{inspect(reason)}"
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -399,6 +451,7 @@ defmodule AfpWeb.OpportunitiesLive do
               selected_file_path={@selected_file_path}
               selected_file={@selected_file}
               run_activity={@run_activity}
+              promote_form={@promote_form}
             />
         <% end %>
       </div>

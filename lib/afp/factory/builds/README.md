@@ -26,3 +26,7 @@ record + Events.
   `VERIFY_SIM` pinning and one automatic retry on infrastructure false-reds.
 - `verify_queue.ex` - Global GenServer queue: one verify chain at a time
   across all apps (simulator-contention lock).
+- `scaffold.ex` - Deterministic opportunity→app promotion: template
+  `git archive` export, spec package copy, manifest patch, fresh state db,
+  git init. Agent-side identity work stays with the repo's
+  scaffold-from-spec skill.

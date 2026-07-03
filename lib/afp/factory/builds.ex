@@ -8,12 +8,15 @@ defmodule Afp.Factory.Builds do
   alias Afp.Factory.AgentClient
   alias Afp.Factory.Builds.AppRepo
   alias Afp.Factory.Builds.BuildRun
+  alias Afp.Factory.Builds.Scaffold
   alias Afp.Factory.Builds.Storage
   alias Afp.Factory.Builds.VerifyQueue
   alias Afp.Factory.Builds.VerifyRunner
   alias Afp.Factory.CodexAppClient
   alias Afp.Factory.Events
+  alias Afp.Factory.Opportunities
   alias Afp.Factory.Opportunities.ClaudeCodeClient
+  alias Afp.Factory.Portfolio
   alias Afp.Factory.Portfolio.App
 
   @launch_supervisor Afp.Factory.AgentLaunchSupervisor
@@ -47,9 +50,69 @@ defmodule Afp.Factory.Builds do
     "git commit *"
   ]
 
+  @default_template_path "~/Developer/Websites/afp-app-template"
+  @template_setting_key "app_template_repo"
+
   def agents, do: @agents
 
   defdelegate inspect_app_repo(repo_path), to: AppRepo, as: :inspect_repo
+
+  @doc "The golden template path: Settings override or the default checkout."
+  def app_template_path do
+    case Afp.Factory.Settings.get_setting(@template_setting_key, %{}) do
+      %{"path" => path} when is_binary(path) and path != "" -> path
+      _setting -> @default_template_path
+    end
+  end
+
+  @doc """
+  Promotes a `build_spec_ready` opportunity into an App: exports the golden
+  template to a new repo, copies the opportunity's spec package into it,
+  creates the Portfolio app record, and marks the opportunity promoted.
+  The agent-side identity work continues via the repo's scaffold-from-spec
+  skill from the new app's detail page.
+  """
+  def promote_opportunity(opportunity_id, attrs, opts \\ []) do
+    name = Factory.trim_nil(attrs["name"] || attrs[:name])
+    repo_path = Factory.trim_nil(attrs["repo_path"] || attrs[:repo_path])
+
+    with :ok <- ensure_present(name, :app_name_required),
+         :ok <- ensure_present(repo_path, :repo_path_required),
+         {:ok, opportunity} <- Opportunities.get_opportunity(opportunity_id),
+         :ok <- ensure_promotable(opportunity),
+         {:ok, spec_source} <- Opportunities.spec_package_path(opportunity_id),
+         {:ok, scaffolded} <-
+           Scaffold.create_app_repo(
+             Keyword.get(opts, :template_path, app_template_path()),
+             repo_path,
+             %{display_name: name, spec_source: spec_source}
+           ),
+         {:ok, app} <-
+           Portfolio.create_app(%{
+             "name" => name,
+             "repo_path" => scaffolded.path,
+             "platforms" => "ios",
+             "lifecycle_stage" => "build_ready",
+             "next_action" => "Launch scaffold-from-spec, then the milestone loop"
+           }) do
+      Opportunities.mark_promoted(opportunity_id, name)
+
+      Events.record_event("opportunity", opportunity_id, "opportunity_promoted", %{
+        app_id: app.id,
+        app_name: name,
+        repo_path: scaffolded.path
+      })
+
+      {:ok, app}
+    end
+  end
+
+  defp ensure_present(nil, reason), do: {:error, reason}
+  defp ensure_present(_value, _reason), do: :ok
+
+  defp ensure_promotable(%{status: "build_spec_ready"}), do: :ok
+  defp ensure_promotable(%{status: "promoted"}), do: {:error, :already_promoted}
+  defp ensure_promotable(%{status: status}), do: {:error, {:not_build_spec_ready, status}}
 
   def list_milestones(%App{} = app) do
     with {:ok, repo} <- healthy_repo(app),

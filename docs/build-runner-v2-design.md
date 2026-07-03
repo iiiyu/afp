@@ -64,8 +64,10 @@ the Apps surface. Each decision lists its rationale; two are provisional
 - Diff viewing inside AFP (IDE is the diff surface).
 - Cross-app aggregate build dashboards.
 - Simulator pools / parallelism beyond per-app.
-- "New app from template" scaffold action (separate slice; prerequisite for
-  greenfield apps but not for the LumaSpark-driven v2 bring-up).
+- ~~"New app from template" scaffold action~~ — shipped 2026-07-04 as
+  `Builds.promote_opportunity/3`: a `build_spec_ready` opportunity promotes
+  into a new app repo (template `git archive` export + spec package copy +
+  fresh state db + git init) and lands on the app's detail page.
 
 ## Implementation order (suggested)
 

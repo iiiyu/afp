@@ -146,6 +146,62 @@ defmodule AfpWeb.OpportunitiesLiveTest do
     assert has_element?(view, "#research-step-pain_strength #step-evidence-ev-live-1")
   end
 
+  test "detail page promotes a build_spec_ready opportunity into an app", %{conn: conn} do
+    path = unique_repo_path()
+    {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
+
+    {:ok, %{opportunity: opportunity}} =
+      Opportunities.create_opportunity(%{"raw_input" => "Sparkle camera wedge"})
+
+    :ok =
+      Afp.Factory.RepoSqlite.execute(Path.join(path, "base.sqlite"), """
+      UPDATE opportunities SET status = 'build_spec_ready'
+      WHERE id = #{Afp.Factory.RepoSqlite.escape(opportunity.id)};
+      """)
+
+    spec_dir = Path.join([path, "opportunities", opportunity.id, "spec"])
+    File.mkdir_p!(spec_dir)
+    File.write!(Path.join(spec_dir, "00-goal.md"), "# Goal")
+
+    template =
+      temp_git_repo_fixture(%{
+        "AGENTS.md" => "# App Repo Agent Instructions\n",
+        "Scripts/verify.sh" => "#!/bin/sh\nexit 0\n",
+        "afp/manifest.json" =>
+          Jason.encode!(%{
+            "contract" => "afp-app-repo/v1",
+            "app" => %{"display_name" => "FactoryDemo"},
+            "state_db" => "afp/state.sqlite",
+            "spec_dir" => "spec",
+            "verify" => %{
+              "entrypoint" => "Scripts/verify.sh",
+              "report" => "afp/artifacts/verify.json"
+            }
+          })
+      })
+
+    {:ok, _setting} = Afp.Factory.Settings.put_setting("app_template_repo", %{"path" => template})
+
+    target = Path.join(System.tmp_dir!(), "afp-promoted-#{unique_integer()}")
+
+    {:ok, view, html} = live(conn, ~p"/opportunities/#{opportunity.id}")
+    assert html =~ "Promote to App"
+
+    view
+    |> form("#promote-opportunity-form", %{
+      "promote" => %{"name" => "Glint Camera", "repo_path" => target}
+    })
+    |> render_submit()
+
+    assert [app] = Afp.Factory.Portfolio.list_apps()
+    assert app.name == "Glint Camera"
+    assert_redirect(view, "/apps/#{app.id}")
+
+    assert File.exists?(Path.join(target, "spec/00-goal.md"))
+    {:ok, promoted} = Opportunities.get_opportunity(opportunity.id)
+    assert promoted.status == "promoted"
+  end
+
   test "detail page launches build spec generation for researched opportunities", %{conn: conn} do
     path = unique_repo_path()
     {:ok, _repo} = Opportunities.create_repo_from_template(%{"repo_path" => path})
