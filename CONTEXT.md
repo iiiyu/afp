@@ -28,6 +28,13 @@ exactly; synonyms listed as *avoid* are banned in code, docs, and issues.
   the operator can override via `Portfolio.set_health_state/2`.
 - **App Repo** — an external repo following `afp-app-repo/v1`
   (`docs/app-repo-contract.md`): golden template or retrofit.
+- **Build Run** — one agent execution against a milestone (or ad-hoc task)
+  in an app repo; recorded repo-locally in `afp/state.sqlite`
+  (`docs/build-runner-v2-design.md`). *Avoid: build job, packet.*
+- **Review gate** — the hard per-app gate: a completed build run must be
+  marked reviewed before the next milestone may launch. Distinct from the
+  four permanent human gates (spec approval, first submission, pricing,
+  kill).
 
 ## Agent launch (the AgentClient seam)
 
