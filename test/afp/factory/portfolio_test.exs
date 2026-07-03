@@ -46,6 +46,31 @@ defmodule Afp.Factory.PortfolioTest do
     assert %{repo_path: ["has already been taken"]} = errors_on(changeset)
   end
 
+  test "health uses the injected repo inspector, not the real filesystem" do
+    {:ok, app} =
+      Portfolio.create_app(
+        %{
+          "name" => "Inspected App",
+          "repo_path" => "/definitely/missing/#{unique_integer()}",
+          "lifecycle_stage" => "build_ready",
+          "next_action" => "Ship"
+        },
+        repo_exists?: fn _path -> true end
+      )
+
+    assert app.health_state == "healthy"
+  end
+
+  test "building a form changeset performs no health computation" do
+    changeset =
+      Portfolio.change_app(%Afp.Factory.Portfolio.App{}, %{
+        "name" => "Form App",
+        "repo_path" => "/definitely/missing/#{unique_integer()}"
+      })
+
+    assert Ecto.Changeset.get_field(changeset, :health_state) == "unknown"
+  end
+
   test "match_app_by_cwd selects the app whose repo contains cwd" do
     app = app_fixture()
     cwd = Path.join(app.repo_path, "nested")
