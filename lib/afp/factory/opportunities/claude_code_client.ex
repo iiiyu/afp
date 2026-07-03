@@ -9,20 +9,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
   @behaviour Afp.Factory.AgentClient
 
   alias Afp.Factory.AgentClient
-
-  @safe_read_commands ~w(cat date find head ls pwd rg sed tail wc)
-  @denied_bash_patterns [
-    "rm *",
-    "sudo *",
-    "chmod *",
-    "chown *",
-    "git checkout *",
-    "git clean *",
-    "git reset *",
-    "git push *",
-    "open *",
-    "osascript *"
-  ]
+  alias Afp.Factory.AgentClient.CommandPolicy
 
   @impl Afp.Factory.AgentClient
   def launch_new_turn(attrs, opts \\ []) when is_map(attrs) do
@@ -303,19 +290,10 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
   end
 
   defp allow_rules(attrs) do
-    # curl/mkdir support downloading real evidence screenshots into step
-    # directories; destructive commands stay on the deny list.
-    bash_rules = Enum.map(["sqlite3", "curl", "mkdir" | @safe_read_commands], &"Bash(#{&1} *)")
-
-    # Launch contexts with wider toolchains (e.g. BuildRunner: xcodebuild,
-    # verify scripts) pass additional command patterns; deny rules still win.
-    extra_rules =
-      attrs
-      |> Map.get(:extra_command_allow, [])
-      |> Enum.map(&"Bash(#{&1})")
+    bash_rules = CommandPolicy.claude_allow_rules(Map.get(attrs, :extra_command_allow, []))
 
     ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"] ++
-      write_rules(attrs) ++ bash_rules ++ extra_rules
+      write_rules(attrs) ++ bash_rules
   end
 
   defp write_rules(attrs) do
@@ -339,7 +317,7 @@ defmodule Afp.Factory.Opportunities.ClaudeCodeClient do
   end
 
   defp deny_rules do
-    Enum.map(@denied_bash_patterns, &"Bash(#{&1})")
+    CommandPolicy.claude_deny_rules()
   end
 
   defp transcript_path(cwd, session_id) when is_binary(session_id) do

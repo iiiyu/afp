@@ -7,6 +7,7 @@ defmodule Afp.Factory.CodexAppClient do
   require Logger
 
   alias Afp.Factory.AgentClient
+  alias Afp.Factory.AgentClient.Approvals
 
   @behaviour Afp.Factory.AgentClient
 
@@ -26,32 +27,6 @@ defmodule Afp.Factory.CodexAppClient do
   ]
   @legacy_approval_methods ["applyPatchApproval", "execCommandApproval"]
   @approval_request_methods @modern_approval_methods ++ @legacy_approval_methods
-  @sqlite_write_operations [
-    "upsert_research_run",
-    "upsert_candidate",
-    "upsert_source",
-    "upsert_sources",
-    "upsert_score",
-    "upsert_scores",
-    "link_artifact",
-    "upsert_opportunity",
-    "upsert_run",
-    "link_file"
-  ]
-  @safe_read_commands ~w(cat date find head ls pwd rg sed tail wc)
-  @dangerous_command_markers [
-    " rm ",
-    " rm\t",
-    " rm\n",
-    " rm -",
-    "git checkout",
-    "git clean",
-    "git reset",
-    "chmod ",
-    "chown ",
-    "open ",
-    "osascript"
-  ]
 
   @impl Afp.Factory.AgentClient
   def launch_new_turn(attrs, opts \\ []) when is_map(attrs) do
@@ -148,7 +123,7 @@ defmodule Afp.Factory.CodexAppClient do
       server_request_responses: [],
       approval_decision:
         Keyword.get(opts, :approval_decision, Map.get(attrs, :approval_decision)),
-      approval_profile: approval_profile(attrs),
+      approval_profile: Approvals.profile(attrs),
       launch_event_handler: Keyword.get(opts, :on_launch_event)
     }
   end
@@ -689,7 +664,8 @@ defmodule Afp.Factory.CodexAppClient do
            "method" => "item/permissions/requestApproval"
          } = request
        ) do
-    permissions = granted_permissions(conn, request)
+    {permissions, reason} =
+      Approvals.decide_permissions(conn.approval_profile, request_params(request))
 
     %{
       response: %{
@@ -702,7 +678,7 @@ defmodule Afp.Factory.CodexAppClient do
       },
       summary: %{
         "permissions" => permissions,
-        "reason" => permissions_reason(conn, request, permissions)
+        "reason" => reason
       }
     }
   end
@@ -806,110 +782,17 @@ defmodule Afp.Factory.CodexAppClient do
   end
 
   defp app_server_approval_decision(conn, %{"method" => method} = request, _protocol)
-       when method == "item/fileChange/requestApproval" do
-    file_change_approval_decision(conn, request)
+       when method in ["item/fileChange/requestApproval", "applyPatchApproval"] do
+    Approvals.decide_file_change(conn.approval_profile, request_params(request))
   end
 
   defp app_server_approval_decision(conn, %{"method" => method} = request, _protocol)
-       when method == "item/commandExecution/requestApproval" do
-    command_execution_approval_decision(conn, request)
-  end
-
-  defp app_server_approval_decision(conn, %{"method" => method} = request, _protocol)
-       when method == "applyPatchApproval" do
-    file_change_approval_decision(conn, request)
-  end
-
-  defp app_server_approval_decision(conn, %{"method" => method} = request, _protocol)
-       when method == "execCommandApproval" do
-    command_execution_approval_decision(conn, request)
+       when method in ["item/commandExecution/requestApproval", "execCommandApproval"] do
+    Approvals.decide_command(conn.approval_profile, request_params(request))
   end
 
   defp app_server_approval_decision(_conn, _request, _protocol),
     do: {"decline", "Unsupported approval request."}
-
-  defp legacy_decision("accept"), do: "approved"
-  defp legacy_decision("acceptForSession"), do: "approved_for_session"
-  defp legacy_decision("cancel"), do: "abort"
-  defp legacy_decision(_decision), do: "denied"
-
-  defp file_change_approval_decision(%{approval_profile: profile}, request) do
-    grant_root = request |> request_params() |> Map.get("grantRoot")
-
-    cond do
-      blank?(grant_root) ->
-        {"accept", "No extra grant root requested; turn sandbox and source repo contract apply."}
-
-      path_within_any?(grant_root, profile.write_roots) ->
-        {"accept", "Requested grant root is inside manifest-declared write targets."}
-
-      sqlite_path?(profile, grant_root) ->
-        {"accept", "Requested grant root matches the manifest-declared SQLite path."}
-
-      true ->
-        {"decline", "Requested grant root is outside manifest-declared write targets."}
-    end
-  end
-
-  defp command_execution_approval_decision(%{approval_profile: profile}, request) do
-    params = request_params(request)
-    cwd = params["cwd"] || profile.cwd
-    command = params["command"]
-    command_actions = params["commandActions"]
-
-    cond do
-      not path_within?(cwd, profile.source_root) ->
-        {"decline", "Command cwd is outside the source repo."}
-
-      network_approval?(params) and profile.network_access ->
-        {"accept", "Network access is enabled for this bounded research turn."}
-
-      command_actions_outside_source?(command_actions, profile) ->
-        {"decline", "Command action path is outside the source repo."}
-
-      dangerous_command?(command) ->
-        {"decline", "Command matches a blocked destructive or out-of-band pattern."}
-
-      read_only_command_actions?(command_actions) ->
-        {"accept", "Command actions are read-only and source-repo bounded."}
-
-      sqlite_command_allowed?(command, profile) ->
-        {"accept",
-         "Command targets the manifest-declared SQLite database with allowed operations."}
-
-      safe_read_command?(command) ->
-        {"accept", "Command appears read-only and source-repo bounded."}
-
-      true ->
-        {"decline", "Command is not recognized as safe or manifest-bounded."}
-    end
-  end
-
-  defp granted_permissions(%{approval_profile: profile}, request) do
-    requested = request |> request_params() |> Map.get("permissions") || %{}
-    network = requested["network"] || %{}
-
-    if network["enabled"] == true and profile.network_access do
-      %{"network" => %{"enabled" => true}}
-    else
-      %{}
-    end
-  end
-
-  defp permissions_reason(%{approval_profile: profile}, request, permissions) do
-    requested = request |> request_params() |> Map.get("permissions") || %{}
-
-    cond do
-      permissions != %{} ->
-        "Granted requested network permission; filesystem permissions remain bounded by sandbox."
-
-      get_in(requested, ["network", "enabled"]) == true and not profile.network_access ->
-        "Network permission was requested but network access is disabled for this launch."
-
-      true ->
-        "No additional permissions granted; filesystem writes stay inside the turn sandbox."
-    end
-  end
 
   defp server_request_summary(%{"params" => params}) when is_map(params) do
     params
@@ -923,160 +806,10 @@ defmodule Afp.Factory.CodexAppClient do
   defp request_params(%{"params" => params}) when is_map(params), do: params
   defp request_params(_request), do: %{}
 
-  defp approval_profile(attrs) do
-    cwd = attrs |> Map.fetch!(:cwd) |> Path.expand()
-    source_root = attrs |> Map.get(:source_repo_root, cwd) |> Path.expand(cwd)
-    write_roots = approval_write_roots(source_root, attrs)
-    sqlite_path = sqlite_path(source_root, attrs)
-
-    %{
-      cwd: cwd,
-      source_root: source_root,
-      write_roots: write_roots,
-      sqlite_path: sqlite_path,
-      sqlite_allowed_operations: Map.get(attrs, :sqlite_allowed_operations, []),
-      network_access: Map.get(attrs, :network_access, true)
-    }
-  end
-
-  defp approval_write_roots(source_root, attrs) do
-    write_targets =
-      attrs
-      |> Map.get(:write_targets, %{})
-      |> write_target_paths()
-      |> Enum.map(&expand_source_path(source_root, &1))
-
-    fallback_roots =
-      if write_targets == [] do
-        [source_root]
-      else
-        write_targets
-      end
-
-    fallback_roots
-    |> Enum.map(&Path.expand/1)
-    |> Enum.uniq()
-  end
-
-  defp write_target_paths(write_targets) when is_map(write_targets) do
-    write_targets
-    |> Map.values()
-    |> Enum.filter(&is_binary/1)
-    |> Enum.reject(&blank?/1)
-  end
-
-  defp write_target_paths(_write_targets), do: []
-
-  defp sqlite_path(source_root, attrs) do
-    case Map.get(attrs, :sqlite_path) do
-      path when is_binary(path) and path != "" -> expand_source_path(source_root, path)
-      _path -> nil
-    end
-  end
-
-  defp sqlite_path?(%{sqlite_path: nil}, _path), do: false
-
-  defp sqlite_path?(%{sqlite_path: sqlite_path}, path) do
-    expanded_path = Path.expand(path)
-    expanded_path == sqlite_path or String.starts_with?(expanded_path, sqlite_path <> "-")
-  end
-
-  defp expand_source_path(source_root, path) do
-    if Path.type(path) == :absolute do
-      Path.expand(path)
-    else
-      Path.expand(path, source_root)
-    end
-  end
-
-  defp path_within?(nil, _root), do: false
-
-  defp path_within?(path, root) when is_binary(path) and is_binary(root) do
-    expanded_path = Path.expand(path)
-    expanded_root = Path.expand(root)
-
-    expanded_path == expanded_root or String.starts_with?(expanded_path, expanded_root <> "/")
-  end
-
-  defp path_within?(_path, _root), do: false
-
-  defp path_within_any?(path, roots) when is_binary(path) do
-    Enum.any?(roots, &path_within?(path, &1))
-  end
-
-  defp path_within_any?(_path, _roots), do: false
-
-  defp network_approval?(params) do
-    match?(%{}, params["networkApprovalContext"])
-  end
-
-  defp command_actions_outside_source?(actions, profile) when is_list(actions) do
-    Enum.any?(actions, fn action ->
-      case Map.get(action, "path") do
-        path when is_binary(path) -> not path_within?(path, profile.source_root)
-        _path -> false
-      end
-    end)
-  end
-
-  defp command_actions_outside_source?(_actions, _profile), do: false
-
-  defp read_only_command_actions?(actions) when is_list(actions) and actions != [] do
-    Enum.all?(actions, fn action ->
-      Map.get(action, "type") in ["read", "listFiles", "search"]
-    end)
-  end
-
-  defp read_only_command_actions?(_actions), do: false
-
-  defp sqlite_command_allowed?(command, %{sqlite_path: sqlite_path} = profile)
-       when is_binary(command) and is_binary(sqlite_path) do
-    sqlite_requested? =
-      String.contains?(command, "sqlite3") and
-        (String.contains?(command, sqlite_path) ||
-           String.contains?(command, Path.basename(sqlite_path)))
-
-    sqlite_write_allowed? =
-      Enum.any?(profile.sqlite_allowed_operations || [], &(&1 in @sqlite_write_operations))
-
-    sqlite_requested? and sqlite_write_allowed?
-  end
-
-  defp sqlite_command_allowed?(_command, _profile), do: false
-
-  defp safe_read_command?(command) when is_binary(command) do
-    normalized = command |> String.trim() |> strip_rtk_prefix()
-    first = normalized |> String.split(~r/\s+/, parts: 2) |> List.first()
-
-    cond do
-      first in @safe_read_commands and not command_writes?(normalized) -> true
-      String.starts_with?(normalized, "git status") -> true
-      String.starts_with?(normalized, "git diff") -> true
-      String.starts_with?(normalized, "git log") -> true
-      String.starts_with?(normalized, "sqlite3 -readonly") -> true
-      true -> false
-    end
-  end
-
-  defp safe_read_command?(_command), do: false
-
-  defp strip_rtk_prefix("rtk " <> rest), do: String.trim(rest)
-  defp strip_rtk_prefix(command), do: command
-
-  defp command_writes?(command) do
-    String.contains?(command, ">") or
-      String.contains?(command, " tee ") or
-      String.contains?(command, " -i ")
-  end
-
-  defp dangerous_command?(command) when is_binary(command) do
-    padded = " " <> String.trim(command) <> " "
-    Enum.any?(@dangerous_command_markers, &String.contains?(padded, &1))
-  end
-
-  defp dangerous_command?(_command), do: false
-
-  defp blank?(value), do: is_nil(value) or (is_binary(value) and String.trim(value) == "")
+  defp legacy_decision("accept"), do: "approved"
+  defp legacy_decision("acceptForSession"), do: "approved_for_session"
+  defp legacy_decision("cancel"), do: "abort"
+  defp legacy_decision(_decision), do: "denied"
 
   defp log_server_request_response(method, summary) do
     console_message =
