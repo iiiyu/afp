@@ -36,6 +36,21 @@ defmodule Afp.Factory.Events do
     )
   end
 
+  @build_activity_topic "factory:build_run_activity"
+
+  def subscribe_build_activity do
+    Phoenix.PubSub.subscribe(Afp.PubSub, @build_activity_topic)
+  end
+
+  # Ephemeral live-progress feed for build runs; broadcast only, never persisted.
+  def broadcast_build_activity(app_id, run_id, activity) do
+    Phoenix.PubSub.broadcast(
+      Afp.PubSub,
+      @build_activity_topic,
+      {:build_run_activity, %{app_id: app_id, run_id: run_id, activity: activity}}
+    )
+  end
+
   def list_events(limit \\ 100) do
     Event
     |> order_by([event], desc: event.inserted_at)

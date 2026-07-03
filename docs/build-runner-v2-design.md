@@ -49,7 +49,7 @@ the Apps surface. Each decision lists its rationale; two are provisional
    `verify.simulator` manifest field so each app pins a distinct simulator
    (`VERIFY_SIM`), isolating agent-turn builds too.
 
-8. ⏳ **Failure/stale handling (provisional — recommended, unconfirmed):**
+8. **Failure/stale handling (confirmed 2026-07-04):**
    on turn failure AFP marks the run `failed` and resets a lying
    `in_progress` milestone back to `pending`; a startup/page-load
    reconciler fails `running` runs past a grace window with no session

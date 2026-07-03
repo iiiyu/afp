@@ -15,6 +15,7 @@ defmodule Afp.Application do
         {Task.Supervisor, name: Afp.Factory.AgentLaunchSupervisor},
         id: Afp.Factory.AgentLaunchSupervisor
       ),
+      Afp.Factory.Builds.VerifyQueue,
       {DNSCluster, query: Application.get_env(:afp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Afp.PubSub},
       # Start a worker by calling: Afp.Worker.start_link(arg)
