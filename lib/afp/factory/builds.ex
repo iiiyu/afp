@@ -158,6 +158,32 @@ defmodule Afp.Factory.Builds do
     end
   end
 
+  @doc "True when the repo carries a spec package but no milestones yet — the bootstrap state."
+  def needs_scaffold?(%App{} = app) do
+    case healthy_repo(app) do
+      {:ok, repo} ->
+        spec_dir = Path.join(repo.path, repo.manifest["spec_dir"] || "spec")
+        File.dir?(spec_dir) and list_milestones(app) == []
+
+      _unhealthy ->
+        false
+    end
+  end
+
+  @doc """
+  Bootstrap run for a freshly promoted app: the agent executes the repo's
+  scaffold-from-spec skill (identity, tokens, demo removal) and seeds the
+  milestone plan from spec/08-milestones.md — after which the milestone
+  loop takes over.
+  """
+  def launch_scaffold(%App{} = app, opts \\ []) do
+    with {:ok, repo} <- healthy_repo(app),
+         :ok <- ensure_launchable(app) do
+      prompt = scaffold_prompt(repo.manifest)
+      start_run(app, repo, %{task_text: "Scaffold from spec package", prompt: prompt}, opts)
+    end
+  end
+
   @doc "Launches an ad-hoc free-text task (the retrofit fallback)."
   def launch_task(%App{} = app, task_text, opts \\ []) do
     task_text = Factory.trim_nil(task_text)
@@ -240,6 +266,7 @@ defmodule Afp.Factory.Builds do
              milestone_key: attrs[:milestone_key],
              task_text: attrs[:task_text],
              agent: agent,
+             model: launch_model(opts),
              prompt: attrs.prompt
            }) do
       if attrs[:milestone_key],
@@ -412,6 +439,20 @@ defmodule Afp.Factory.Builds do
     |> String.trim()
   end
 
+  defp scaffold_prompt(manifest) do
+    """
+    You are working inside an AFP app repo (contract #{AppRepo.contract()}).
+
+    Read `AGENTS.md` first and follow it exactly, then `afp/manifest.json`.
+    Execute `.skills/scaffold-from-spec/SKILL.md`: instantiate this template
+    for the app defined in `#{manifest["spec_dir"] || "spec"}/` and seed the
+    milestone plan into the state db.
+
+    VERIFY_ENTRYPOINT: #{AppRepo.verify_entrypoint(manifest)}
+    """
+    |> String.trim()
+  end
+
   # Retrofit fallback: repos without build skills get the operating rules inline.
   defp task_prompt(manifest, task_text) do
     """
@@ -439,6 +480,7 @@ defmodule Afp.Factory.Builds do
     %AgentClient.Request{
       cwd: repo.path,
       input_text: run.prompt,
+      model: run.model,
       client_user_message_id: run.id,
       source_repo_root: repo.path,
       sqlite_path: AppRepo.state_db_path(repo.manifest),
@@ -459,6 +501,10 @@ defmodule Afp.Factory.Builds do
   defp launch_agent(opts) do
     agent = Keyword.get(opts, :agent, @default_agent)
     if agent in @agents, do: agent, else: @default_agent
+  end
+
+  defp launch_model(opts) do
+    opts |> Keyword.get(:model) |> Factory.trim_nil()
   end
 
   defp launch_mode(opts) do

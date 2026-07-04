@@ -114,6 +114,25 @@ defmodule Afp.Factory.BuildsTest do
     end
   end
 
+  describe "launch_scaffold/2" do
+    test "bootstrap state and scaffold run with agent/model selection" do
+      app = build_app!()
+      refute Builds.needs_scaffold?(app)
+
+      File.mkdir_p!(Path.join(app.repo_path, "spec"))
+      File.write!(Path.join(app.repo_path, "spec/00-goal.md"), "# Goal")
+      assert Builds.needs_scaffold?(app)
+
+      assert {:ok, run} = Builds.launch_scaffold(app, agent: "codex", model: "gpt-5.5")
+
+      assert run.status == "completed"
+      assert run.agent == "codex"
+      assert run.model == "gpt-5.5"
+      assert run.task_text == "Scaffold from spec package"
+      assert run.prompt =~ ".skills/scaffold-from-spec"
+    end
+  end
+
   describe "launch_task/3" do
     test "ad-hoc task run with the retrofit prompt" do
       app = build_app!()

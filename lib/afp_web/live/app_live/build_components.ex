@@ -7,10 +7,12 @@ defmodule AfpWeb.AppLive.BuildComponents do
   use AfpWeb, :html
 
   alias Afp.Factory.Builds.BuildRun
+  alias Afp.Factory.Opportunities
 
   attr :repo_health, :map, default: nil
   attr :milestones, :list, required: true
   attr :launch_blocked, :any, default: nil
+  attr :needs_scaffold, :boolean, default: false
   attr :task_form, Phoenix.HTML.Form, required: true
 
   def build_panel(assigns) do
@@ -47,11 +49,60 @@ defmodule AfpWeb.AppLive.BuildComponents do
           <% end %>
         </div>
 
+        <div
+          :if={@needs_scaffold && is_nil(@launch_blocked)}
+          class="rounded border border-emerald-300 bg-emerald-50/50 p-3 dark:border-emerald-800 dark:bg-emerald-950/40"
+        >
+          <div class="mb-1 text-sm font-semibold text-slate-950 dark:text-white">
+            First step: scaffold from the spec package
+          </div>
+          <p class="mb-2 text-xs text-slate-600 dark:text-slate-300">
+            The agent instantiates the template for this app (identity, tokens,
+            demo removal) and seeds the milestone plan from
+            spec/08-milestones.md. Then launch the milestones below one by one
+            — each run must pass verify and be reviewed before the next.
+          </p>
+          <.button
+            id="launch-scaffold"
+            variant="primary"
+            phx-click="launch_scaffold"
+            data-confirm="Run scaffold-from-spec with the selected agent/model?"
+          >
+            <.icon name="hero-sparkles" class="size-4" /> Run scaffold-from-spec
+          </.button>
+        </div>
+
+        <.form
+          for={@task_form}
+          id="build-launch-settings"
+          phx-change="build_form_changed"
+          class="grid gap-2 md:grid-cols-3"
+        >
+          <.input
+            field={@task_form[:agent]}
+            type="select"
+            label="Agent"
+            options={agent_options()}
+          />
+          <.input
+            field={@task_form[:model]}
+            type="select"
+            label="Model"
+            options={model_options(@task_form)}
+          />
+          <.input
+            :if={custom_model_selected?(@task_form)}
+            field={@task_form[:model_custom]}
+            label="Custom model"
+            placeholder="exact model id"
+          />
+        </.form>
+
         <div>
           <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Milestones
           </div>
-          <div :if={@milestones == []} class="text-sm text-slate-500">
+          <div :if={@milestones == [] && !@needs_scaffold} class="text-sm text-slate-500">
             No milestones in the state db yet (scaffold seeds them from spec/08-milestones.md).
           </div>
           <div class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -89,7 +140,7 @@ defmodule AfpWeb.AppLive.BuildComponents do
             type="textarea"
             rows="2"
             label="Ad-hoc task"
-            placeholder="One bounded task for the agent (retrofit fallback)"
+            placeholder="One bounded task for the agent"
           />
           <.button type="submit" variant="primary" disabled={not is_nil(@launch_blocked)}>
             <.icon name="hero-play" class="size-4" /> Launch task
@@ -155,7 +206,9 @@ defmodule AfpWeb.AppLive.BuildComponents do
           </div>
 
           <div class="text-xs text-slate-500">
-            {run.agent} · {short_timestamp(run.created_at)}
+            {Opportunities.agent_label(run.agent)}<span :if={run.model}> · {run.model}</span> · {short_timestamp(
+              run.created_at
+            )}
             <span :if={run.agent_session_id} class="break-all">· {run.agent_session_id}</span>
           </div>
 
@@ -224,6 +277,27 @@ defmodule AfpWeb.AppLive.BuildComponents do
     </.panel>
     """
   end
+
+  defp agent_options do
+    Enum.map(Opportunities.supported_agents(), &{Opportunities.agent_label(&1), &1})
+  end
+
+  defp model_options(form) do
+    known = Opportunities.known_models(selected_agent(form))
+
+    [{"CLI default", ""}] ++
+      Enum.map(known, &{&1, &1}) ++ [{"Custom…", Opportunities.custom_model_value()}]
+  end
+
+  defp selected_agent(form) do
+    case form[:agent].value do
+      agent when is_binary(agent) and agent != "" -> agent
+      _value -> "claude_code"
+    end
+  end
+
+  defp custom_model_selected?(form),
+    do: form[:model].value == Opportunities.custom_model_value()
 
   defp gate_summary(%{"gates" => gates}) when is_list(gates) do
     Enum.map_join(gates, ", ", fn gate -> "#{gate["id"]}=#{gate["status"]}" end)

@@ -46,6 +46,7 @@ defmodule Afp.Factory.Builds.Storage do
       milestone_key TEXT,
       task_text TEXT,
       agent TEXT NOT NULL DEFAULT 'claude_code',
+      model TEXT,
       status TEXT NOT NULL DEFAULT 'queued',
       prompt TEXT,
       agent_session_id TEXT,
@@ -65,6 +66,22 @@ defmodule Afp.Factory.Builds.Storage do
 
     CREATE INDEX IF NOT EXISTS idx_build_runs_status ON build_runs(status);
     """)
+    |> case do
+      :ok -> ensure_model_column(db_path)
+      error -> error
+    end
+  end
+
+  # Repos created before the model column existed upgrade in place.
+  defp ensure_model_column(db_path) do
+    with {:ok, rows} <-
+           RepoSqlite.query(db_path, "SELECT name FROM pragma_table_info('build_runs')") do
+      if Enum.any?(rows, &(&1["name"] == "model")) do
+        :ok
+      else
+        RepoSqlite.execute(db_path, "ALTER TABLE build_runs ADD COLUMN model TEXT;")
+      end
+    end
   end
 
   def list_milestones(db_path) do
@@ -125,10 +142,11 @@ defmodule Afp.Factory.Builds.Storage do
     with :ok <-
            RepoSqlite.execute(db_path, """
            INSERT INTO build_runs
-             (id, milestone_key, task_text, agent, status, prompt, created_at, updated_at)
+             (id, milestone_key, task_text, agent, model, status, prompt, created_at, updated_at)
            VALUES
              (#{sql(attrs.id)}, #{sql(attrs[:milestone_key])}, #{sql(attrs[:task_text])},
-              #{sql(attrs.agent)}, 'queued', #{sql(attrs.prompt)}, #{sql(now)}, #{sql(now)});
+              #{sql(attrs.agent)}, #{sql(attrs[:model])}, 'queued', #{sql(attrs.prompt)},
+              #{sql(now)}, #{sql(now)});
            """) do
       get_run(db_path, attrs.id)
     end

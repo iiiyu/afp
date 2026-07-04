@@ -50,7 +50,7 @@ defmodule Afp.Factory.Builds.BuildRun do
   into `verify` / `verify_pass`.
   """
 
-  @columns ~w(id milestone_key task_text agent status prompt agent_session_id
+  @columns ~w(id milestone_key task_text agent model status prompt agent_session_id
               agent_thread_id agent_turn_id transcript_path final_answer
               verify_json verify_pass reviewed_at error started_at completed_at
               created_at updated_at)
@@ -60,6 +60,7 @@ defmodule Afp.Factory.Builds.BuildRun do
     :milestone_key,
     :task_text,
     :agent,
+    :model,
     :status,
     :prompt,
     :agent_session_id,
@@ -86,6 +87,7 @@ defmodule Afp.Factory.Builds.BuildRun do
       milestone_key: row["milestone_key"],
       task_text: row["task_text"],
       agent: row["agent"],
+      model: row["model"],
       status: row["status"],
       prompt: row["prompt"],
       agent_session_id: row["agent_session_id"],

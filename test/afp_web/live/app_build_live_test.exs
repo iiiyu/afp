@@ -39,6 +39,28 @@ defmodule AfpWeb.AppBuildLiveTest do
     assert html =~ "reviewed"
   end
 
+  test "detail page bootstraps a fresh spec repo through scaffold-from-spec", %{conn: conn} do
+    app = build_app!()
+    File.mkdir_p!(Path.join(app.repo_path, "spec"))
+    File.write!(Path.join(app.repo_path, "spec/00-goal.md"), "# Goal")
+
+    {:ok, view, html} = live(conn, ~p"/apps/#{app.id}")
+
+    assert html =~ "First step: scaffold from the spec package"
+    assert html =~ "Agent"
+    assert has_element?(view, "#build-launch-settings select[name=\"task[agent]\"]")
+
+    view |> element("#launch-scaffold") |> render_click()
+
+    html = render(view)
+    assert html =~ "Scaffold from spec package"
+    assert html =~ "awaiting review"
+    refute html =~ "First step: scaffold"
+
+    assert [run] = Builds.list_runs(app)
+    assert run.task_text == "Scaffold from spec package"
+  end
+
   test "detail page shows repo reports", %{conn: conn} do
     app = build_app!()
     reports = Path.join(app.repo_path, "afp/reports")

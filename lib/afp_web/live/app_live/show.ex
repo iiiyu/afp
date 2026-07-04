@@ -29,42 +29,34 @@ defmodule AfpWeb.AppLive.Show do
   end
 
   @impl true
-  def handle_event("transition_lifecycle", %{"lifecycle" => params}, socket) do
-    result =
-      Portfolio.transition_lifecycle(
-        socket.assigns.app,
-        params["lifecycle_stage"],
-        params["note"]
-      )
+  def handle_event("build_form_changed", %{"task" => params}, socket) do
+    previous_agent = socket.assigns.task_form.params["agent"]
 
-    respond_transition(result, socket, "Lifecycle updated.")
-  end
+    params =
+      if params["agent"] == previous_agent do
+        params
+      else
+        Map.merge(params, %{"model" => "", "model_custom" => ""})
+      end
 
-  def handle_event("transition_posture", %{"posture" => params}, socket) do
-    result =
-      Portfolio.transition_business_posture(
-        socket.assigns.app,
-        params["business_posture"],
-        params["note"]
-      )
-
-    respond_transition(result, socket, "Business posture updated.")
-  end
-
-  def handle_event("update_next_action", %{"app" => params}, socket) do
-    result = Portfolio.update_next_action(socket.assigns.app, params["next_action"])
-    respond_transition(result, socket, "Next action updated.")
+    {:noreply, assign(socket, :task_form, to_form(params, as: :task))}
   end
 
   def handle_event("launch_milestone", %{"key" => milestone_key}, socket) do
     socket.assigns.app
-    |> Builds.launch_milestone(milestone_key)
+    |> Builds.launch_milestone(milestone_key, launch_opts(socket))
     |> respond_launch(socket, "Agent launched against #{milestone_key}.")
   end
 
-  def handle_event("launch_task", %{"task" => %{"task_text" => task_text}}, socket) do
+  def handle_event("launch_scaffold", _params, socket) do
     socket.assigns.app
-    |> Builds.launch_task(task_text)
+    |> Builds.launch_scaffold(launch_opts(socket))
+    |> respond_launch(socket, "Scaffold-from-spec launched.")
+  end
+
+  def handle_event("launch_task", %{"task" => params}, socket) do
+    socket.assigns.app
+    |> Builds.launch_task(params["task_text"], launch_opts(socket, params))
     |> respond_launch(socket, "Agent launched on the ad-hoc task.")
   end
 
@@ -140,6 +132,13 @@ defmodule AfpWeb.AppLive.Show do
     end
   end
 
+  defp launch_opts(socket, params \\ nil) do
+    params =
+      Afp.Factory.Opportunities.resolve_model_selection(params || socket.assigns.task_form.params)
+
+    [agent: params["agent"] || "claude_code", model: params["model"]]
+  end
+
   defp launch_error({:repo_unhealthy, state, _notes}), do: "App repo is not healthy: #{state}."
   defp launch_error({:active_run, _id}), do: "A run is already in flight for this app."
 
@@ -153,19 +152,6 @@ defmodule AfpWeb.AppLive.Show do
   defp launch_error(:task_text_required), do: "Task text is required."
   defp launch_error({:build_run_failed, _id}), do: "Run failed — see the run entry for details."
   defp launch_error(reason), do: "Launch failed: #{inspect(reason)}"
-
-  defp respond_transition(result, socket, success_message) do
-    case result do
-      {:ok, _app} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, success_message)
-         |> load_app()}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Update failed: #{inspect(reason)}")}
-    end
-  end
 
   defp load_app(socket) do
     app = Portfolio.get_app!(socket.assigns.app_id)
@@ -182,11 +168,20 @@ defmodule AfpWeb.AppLive.Show do
     |> assign(:runs, if(healthy?, do: Builds.list_runs(app), else: []))
     |> assign(:launch_blocked, if(healthy?, do: Builds.launch_blocked(app)))
     |> assign(:report_files, if(healthy?, do: Builds.list_report_files(app), else: []))
+    |> assign(:needs_scaffold, healthy? and Builds.needs_scaffold?(app))
     |> assign(:events, Events.list_subject_events("app", app.id))
-    |> assign(:next_action_form, to_form(%{"next_action" => app.next_action}, as: :app))
-    |> assign(:lifecycle_form, to_form(%{}, as: :lifecycle))
-    |> assign(:posture_form, to_form(%{}, as: :posture))
-    |> assign(:task_form, to_form(%{}, as: :task))
+    |> assign_new_task_form()
+  end
+
+  # Keep the operator's agent/model selection across event-driven reloads.
+  defp assign_new_task_form(socket) do
+    case socket.assigns[:task_form] do
+      nil ->
+        assign(socket, :task_form, to_form(%{"agent" => "claude_code", "model" => ""}, as: :task))
+
+      _form ->
+        socket
+    end
   end
 
   defp thesis_entries(thesis) when is_map(thesis) do
@@ -220,7 +215,7 @@ defmodule AfpWeb.AppLive.Show do
           </:meta>
         </.page_header>
 
-        <div class="grid gap-4 2xl:grid-cols-[minmax(0,1.4fr)_380px]">
+        <div>
           <main class="space-y-4">
             <.panel title="Overview">
               <div class="space-y-3 text-sm">
@@ -271,6 +266,7 @@ defmodule AfpWeb.AppLive.Show do
               repo_health={@repo_health}
               milestones={@milestones}
               launch_blocked={@launch_blocked}
+              needs_scaffold={@needs_scaffold}
               task_form={@task_form}
             />
 
@@ -300,60 +296,6 @@ defmodule AfpWeb.AppLive.Show do
               </ul>
             </.panel>
           </main>
-
-          <aside class="space-y-4">
-            <.panel title="Next action">
-              <.form
-                for={@next_action_form}
-                id="next-action-form"
-                phx-submit="update_next_action"
-                class="space-y-2"
-              >
-                <.input field={@next_action_form[:next_action]} type="textarea" rows="3" />
-                <.button type="submit" variant="primary">Save</.button>
-              </.form>
-            </.panel>
-
-            <.panel title="Transitions">
-              <.disclosure title="Lifecycle" subtitle="Operator-confirmed stage transition." open>
-                <.form
-                  for={@lifecycle_form}
-                  id="lifecycle-form"
-                  phx-submit="transition_lifecycle"
-                  class="space-y-2"
-                >
-                  <.input
-                    field={@lifecycle_form[:lifecycle_stage]}
-                    type="select"
-                    label="Stage"
-                    options={Factory.options(Factory.lifecycle_stages())}
-                    value={@app.lifecycle_stage}
-                  />
-                  <.input field={@lifecycle_form[:note]} label="Note" required />
-                  <.button type="submit" variant="primary">Transition</.button>
-                </.form>
-              </.disclosure>
-
-              <.disclosure title="Business posture" subtitle="Grow, maintain, fix, harvest, kill.">
-                <.form
-                  for={@posture_form}
-                  id="posture-form"
-                  phx-submit="transition_posture"
-                  class="space-y-2"
-                >
-                  <.input
-                    field={@posture_form[:business_posture]}
-                    type="select"
-                    label="Posture"
-                    options={Factory.options(Factory.business_postures())}
-                    value={@app.business_posture}
-                  />
-                  <.input field={@posture_form[:note]} label="Note" required />
-                  <.button type="submit" variant="primary">Transition</.button>
-                </.form>
-              </.disclosure>
-            </.panel>
-          </aside>
         </div>
       </div>
     </Layouts.app>

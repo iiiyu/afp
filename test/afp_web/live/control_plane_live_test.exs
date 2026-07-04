@@ -19,32 +19,15 @@ defmodule AfpWeb.ControlPlaneLiveTest do
     end
   end
 
-  test "app detail shows overview, transitions, and event history", %{conn: conn} do
+  test "app detail shows overview, the build surface, and event history", %{conn: conn} do
     app = app_fixture()
 
     {:ok, _view, html} = live(conn, ~p"/apps/#{app.id}")
 
     assert html =~ app.name
     assert html =~ "Overview"
-    assert html =~ "Transitions"
+    assert html =~ "Build runs"
     assert html =~ "Event history"
-  end
-
-  test "app detail lifecycle transition records an event", %{conn: conn} do
-    app = app_fixture()
-
-    {:ok, view, _html} = live(conn, ~p"/apps/#{app.id}")
-
-    view
-    |> form("#lifecycle-form", %{
-      "lifecycle" => %{"lifecycle_stage" => "in_build", "note" => "Starting the build"}
-    })
-    |> render_submit()
-
-    app = Afp.Factory.Portfolio.get_app!(app.id)
-    assert app.lifecycle_stage == "in_build"
-
-    events = Afp.Factory.Events.list_subject_events("app", app.id)
-    assert Enum.any?(events, &(&1.event_type == "lifecycle_transitioned"))
+    refute html =~ "Transitions"
   end
 end
