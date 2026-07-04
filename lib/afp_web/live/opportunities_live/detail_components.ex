@@ -101,9 +101,9 @@ defmodule AfpWeb.OpportunitiesLive.DetailComponents do
               <.input field={@promote_form[:name]} label="App name" required />
               <.input
                 field={@promote_form[:repo_path]}
-                label="New repo path"
+                label="New repo path (the repo directory itself, created if missing)"
                 required
-                placeholder="/Users/ewan/Developer/Apps/MyApp"
+                placeholder="/Users/ewan/Developer/Apps/MyApp — the repo lands exactly here"
               />
               <.button type="submit" variant="primary">
                 <.icon name="hero-rocket-launch" class="size-4" /> Create app repo
