@@ -63,6 +63,9 @@ defmodule Afp.Factory.CodexAppClientTest do
                     %{session_id: "session-1", thread_id: "thread-1"}}
 
     assert_receive {:codex_progress, :turn_started, %{turn_id: "turn-1"}}
+
+    assert_receive {:codex_progress, :activity,
+                    %{"kind" => "message", "text" => "Fake app-server completed."}}
   end
 
   test "launch_new_turn accepts file changes governed by the current sandbox" do

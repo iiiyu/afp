@@ -374,7 +374,97 @@ defmodule Afp.Factory.CodexAppClient do
         Enum.each(decoded_events, &log_transport("recv", event_summary(&1)))
       end)
 
+    notify_activities(conn, events)
+
     %{conn | buffer: buffer, events: conn.events ++ events}
+  end
+
+  # Live-activity feed, mirroring the Claude Code adapter: item notifications
+  # map to neutral activity payloads. Best-effort — a broadcast failure must
+  # never abort a multi-hour turn.
+  defp notify_activities(%{launch_event_handler: handler}, events)
+       when is_function(handler, 2) do
+    events
+    |> Enum.flat_map(&activities/1)
+    |> Enum.each(fn activity ->
+      try do
+        handler.(:activity, activity)
+      catch
+        _kind, _reason -> :ok
+      end
+    end)
+  end
+
+  defp notify_activities(_conn, _events), do: :ok
+
+  defp activities(%{"method" => method, "params" => %{"item" => item}})
+       when method in ["item/started", "item/completed"] do
+    item_activity(method, item)
+  end
+
+  defp activities(_event), do: []
+
+  defp item_activity("item/started", %{"type" => "commandExecution"} = item) do
+    [activity("tool", "Run: #{item["command"] || "command"}")]
+  end
+
+  defp item_activity("item/completed", %{"type" => "commandExecution"} = item) do
+    case item["exitCode"] do
+      code when is_integer(code) and code != 0 ->
+        [activity("tool_error", "Command failed (#{code}): #{item["command"]}")]
+
+      _code ->
+        []
+    end
+  end
+
+  defp item_activity("item/completed", %{"type" => "agentMessage", "text" => text})
+       when is_binary(text) and text != "" do
+    [activity("message", text)]
+  end
+
+  defp item_activity("item/completed", %{"type" => "reasoning"} = item) do
+    case item["summary"] || item["text"] do
+      text when is_binary(text) and text != "" -> [activity("message", text)]
+      _text -> []
+    end
+  end
+
+  defp item_activity("item/completed", %{"type" => "webSearch"} = item) do
+    [activity("tool", "WebSearch: #{item["query"] || ""}")]
+  end
+
+  defp item_activity("item/completed", %{"type" => "fileChange"} = item) do
+    [activity("tool", "Edit: #{file_change_summary(item)}")]
+  end
+
+  defp item_activity(_method, _item), do: []
+
+  defp file_change_summary(item) do
+    item["changes"]
+    |> List.wrap()
+    |> Enum.map(&(is_map(&1) && &1["path"]))
+    |> Enum.filter(&is_binary/1)
+    |> case do
+      [] -> item["path"] || "files"
+      paths -> Enum.join(paths, ", ")
+    end
+  end
+
+  defp activity(kind, text) do
+    %{
+      "kind" => kind,
+      "text" => trim_activity_text(text),
+      "at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+  end
+
+  defp trim_activity_text(text) do
+    if String.length(text) > 240 do
+      String.slice(text, 0, 240) <> "..."
+    else
+      text
+    end
   end
 
   defp split_lines(text) do
